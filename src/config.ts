@@ -12,6 +12,29 @@ export type Provider = "openai" | "anthropic" | "google" | "azure-openai";
 
 export const PROVIDERS: readonly Provider[] = ["openai", "anthropic", "google", "azure-openai"] as const;
 
+// Model to provider mapping
+export const MODEL_PROVIDER_MAP: Record<string, Provider> = {
+    // OpenAI models
+    "gpt-4o": "openai",
+    "gpt-4o-mini": "openai",
+    "gpt-4-turbo": "openai",
+    "gpt-4": "openai",
+    "gpt-3.5-turbo": "openai",
+    // Anthropic models
+    "claude-opus-4-5": "anthropic",
+    "claude-sonnet-4-5": "anthropic",
+    "claude-sonnet-4": "anthropic",
+    "claude-3-5-sonnet-20241022": "anthropic",
+    "claude-sonnet-4-5-20250929": "anthropic",
+    "claude-3-opus-20240229": "anthropic",
+    "claude-3-sonnet-20240229": "anthropic",
+    "claude-3-haiku-20240307": "anthropic",
+};
+
+export function getProviderForModel(model: string): Provider | undefined {
+    return MODEL_PROVIDER_MAP[model];
+}
+
 export function normalizeProvider(input: string | undefined): Provider | undefined {
     if (!input) return undefined;
     const v = input.trim().toLowerCase();
@@ -127,6 +150,30 @@ export async function setProvider(provider: Provider): Promise<void> {
     const config = await readConfig();
     config.provider = provider;
     await writeConfig(config);
+}
+
+/**
+ * Set the model and automatically set the provider based on the model
+ */
+export async function setModel(model: string): Promise<void> {
+    const config = await readConfig();
+    config.model = model;
+
+    // Automatically set provider based on model
+    const provider = getProviderForModel(model);
+    if (provider) {
+        config.provider = provider;
+    }
+
+    await writeConfig(config);
+}
+
+/**
+ * Get the configured model (or undefined if not set)
+ */
+export async function getModel(): Promise<string | undefined> {
+    const config = await readConfig();
+    return config.model;
 }
 
 /**

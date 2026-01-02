@@ -5,7 +5,7 @@ import * as readline from "readline/promises";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import * as clipboardy from "clipboardy";
-import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, normalizeProvider, PROVIDERS, type Provider } from "./config.js";
+import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, setProvider, setModel, getModel, normalizeProvider, getProviderForModel, MODEL_PROVIDER_MAP, PROVIDERS, type Provider } from "./config.js";
 
 const program = new Command();
 
@@ -274,43 +274,6 @@ async function promptFirstRunConfig(): Promise<{ provider: Provider; apiKey: str
     }
 }
 
-async function promptTokenConfig(defaultProvider?: Provider): Promise<{ provider: Provider; apiKey: string; useKeychain: boolean }> {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    try {
-        console.log("\nConfigure BYOK token");
-
-        let provider: Provider | undefined = defaultProvider;
-        if (!provider) {
-            console.log("Select the provider that will supply the token:\n");
-            PROVIDERS.forEach((p, idx) => {
-                console.log(`  ${idx + 1}) ${formatProviderLabel(p)}`);
-            });
-            while (!provider) {
-                const raw = await rl.question("\nProvider (number or name): ");
-                const trimmed = raw.trim();
-                const asNum = Number(trimmed);
-                if (Number.isFinite(asNum) && asNum >= 1 && asNum <= PROVIDERS.length) {
-                    provider = PROVIDERS[asNum - 1];
-                    break;
-                }
-                provider = normalizeProvider(trimmed);
-                if (!provider) console.log(`Please choose one of: ${PROVIDERS.join(", ")}`);
-            }
-        }
-
-        const apiKey = (await rl.question("Enter your BYOK token: ")).trim();
-        if (!apiKey) throw new Error("No token provided.");
-
-        const store = (await rl.question("Store in system keychain? (Y/n): ")).trim().toLowerCase();
-        const useKeychain = store === "" || store === "y" || store === "yes";
-
-        if (!provider) throw new Error("No provider selected.");
-        return { provider, apiKey, useKeychain };
-    } finally {
-        rl.close();
-    }
-}
-
 /**
  * Output the result based on options
  */
@@ -362,42 +325,287 @@ async function outputResult(
     console.log(optimized);
 }
 
+// Helper function to get available models by provider
+function getModelsByProvider(provider: Provider): string[] {
+    return Object.entries(MODEL_PROVIDER_MAP)
+        .filter(([_, p]) => p === provider)
+        .map(([model]) => model);
+}
+
+// Interactive config setup
+async function interactiveConfig(): Promise<void> {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+        console.log("\n╭─────────────────────────────────────╮");
+        console.log("│   MegaBuff Configuration Setup     │");
+        console.log("╰─────────────────────────────────────╯\n");
+        console.log("What would you like to configure?\n");
+        console.log("  1) Set API token for a provider");
+        console.log("  2) Set default provider");
+        console.log("  3) Set model (auto-selects provider)");
+        console.log("  4) View current configuration");
+        console.log("  5) Exit\n");
+
+        const choice = await rl.question("Enter your choice (1-5): ");
+
+        switch (choice.trim()) {
+            case "1": {
+                // Set token
+                console.log("\nSelect provider:\n");
+                PROVIDERS.forEach((p, idx) => {
+                    console.log(`  ${idx + 1}) ${formatProviderLabel(p)}`);
+                });
+
+                const providerChoice = await rl.question("\nProvider (number or name): ");
+                const providerNum = Number(providerChoice);
+                let provider: Provider | undefined;
+
+                if (Number.isFinite(providerNum) && providerNum >= 1 && providerNum <= PROVIDERS.length) {
+                    provider = PROVIDERS[providerNum - 1];
+                } else {
+                    provider = normalizeProvider(providerChoice);
+                }
+
+                if (!provider) {
+                    console.error(`Error: Invalid provider. Valid options: ${PROVIDERS.join(", ")}`);
+                    process.exit(1);
+                }
+
+                const token = (await rl.question("Enter your API token: ")).trim();
+                if (!token) {
+                    console.error("Error: No token provided");
+                    process.exit(1);
+                }
+
+                const store = (await rl.question("Store in system keychain? (Y/n): ")).trim().toLowerCase();
+                const useKeychain = store === "" || store === "y" || store === "yes";
+
+                await setApiKey(provider, token, useKeychain);
+                console.log(`\n✓ ${provider} token saved${useKeychain ? " securely in system keychain" : " to config file"}`);
+                if (!useKeychain) {
+                    console.log("  Tip: Run with --keychain flag next time for more secure storage");
+                }
+                break;
+            }
+
+            case "2": {
+                // Set default provider
+                console.log("\nSelect default provider:\n");
+                PROVIDERS.forEach((p, idx) => {
+                    console.log(`  ${idx + 1}) ${formatProviderLabel(p)}`);
+                });
+
+                const providerChoice = await rl.question("\nProvider (number or name): ");
+                const providerNum = Number(providerChoice);
+                let provider: Provider | undefined;
+
+                if (Number.isFinite(providerNum) && providerNum >= 1 && providerNum <= PROVIDERS.length) {
+                    provider = PROVIDERS[providerNum - 1];
+                } else {
+                    provider = normalizeProvider(providerChoice);
+                }
+
+                if (!provider) {
+                    console.error(`Error: Invalid provider. Valid options: ${PROVIDERS.join(", ")}`);
+                    process.exit(1);
+                }
+
+                await setProvider(provider);
+                console.log(`\n✓ Default provider set to: ${provider}`);
+                break;
+            }
+
+            case "3": {
+                // Set model (auto-selects provider)
+                console.log("\nAvailable models by provider:\n");
+
+                PROVIDERS.forEach((provider) => {
+                    const models = getModelsByProvider(provider);
+                    if (models.length > 0) {
+                        console.log(`${formatProviderName(provider)}:`);
+                        models.forEach(model => console.log(`  - ${model}`));
+                        console.log();
+                    }
+                });
+
+                const modelInput = (await rl.question("Enter model name: ")).trim();
+                if (!modelInput) {
+                    console.error("Error: No model provided");
+                    process.exit(1);
+                }
+
+                const provider = getProviderForModel(modelInput);
+                if (!provider) {
+                    console.error(`Error: Unknown model '${modelInput}'`);
+                    console.error("Tip: Use one of the models listed above");
+                    process.exit(1);
+                }
+
+                await setModel(modelInput);
+                console.log(`\n✓ Model set to: ${modelInput}`);
+                console.log(`✓ Provider auto-set to: ${provider}`);
+                break;
+            }
+
+            case "4": {
+                // Show config
+                const config = await getConfig();
+                const currentProvider = await getProvider();
+                const currentModel = await getModel();
+                const providerStatuses = await Promise.all(
+                    PROVIDERS.map(async (p) => [p, await hasApiKey(p)] as const)
+                );
+
+                console.log("\n╭─────────────────────────────────────╮");
+                console.log("│      Current Configuration          │");
+                console.log("╰─────────────────────────────────────╯\n");
+                console.log(`Provider: ${currentProvider}`);
+                console.log(`Model: ${currentModel || "(default for provider)"}`);
+                console.log(`Storage: ${config.useKeychain ? "System Keychain" : "Config File"}`);
+                console.log("\nAPI Tokens:");
+                for (const [p, ok] of providerStatuses) {
+                    console.log(`  ${p}: ${ok ? "✓ Configured" : "✗ Not configured"}`);
+                }
+                console.log(`\nConfig file: ~/.megabuff/config.json`);
+                break;
+            }
+
+            case "5": {
+                console.log("\nExiting...");
+                break;
+            }
+
+            default: {
+                console.error("Invalid choice. Please enter 1-5.");
+                process.exit(1);
+            }
+        }
+    } finally {
+        rl.close();
+    }
+}
+
 // Config command
 const configCmd = program
     .command("config")
-    .description("Manage configuration");
+    .description("Manage configuration (run without arguments for interactive setup)")
+    .action(async () => {
+        // Interactive mode when no subcommand
+        if (process.stdin.isTTY && process.stdout.isTTY) {
+            await interactiveConfig();
+        } else {
+            console.error("Error: Interactive mode requires a TTY. Use subcommands instead:");
+            console.error("  megabuff config token <token> --provider <provider>");
+            console.error("  megabuff config provider <provider>");
+            console.error("  megabuff config model <model>");
+            console.error("  megabuff config show");
+            process.exit(1);
+        }
+    });
 
 configCmd
-    .command("set")
-    .description("Set your BYOK token for a provider")
-    .argument("[token]", "Your provider API key / token (omit to be prompted)")
-    .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
+    .command("token")
+    .description("Set API token for a provider")
+    .argument("[token]", "API token (omit to be prompted)")
+    .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`, "openai")
     .option("--keychain", "Store in system keychain (more secure)")
     .action(async (token: string | undefined, options) => {
         try {
-            // Interactive flow when token isn't provided
-            if (!token) {
-                if (!process.stdin.isTTY || !process.stdout.isTTY) {
-                    throw new Error("Missing token argument. Provide it inline or run in an interactive terminal to be prompted.");
-                }
-                const defaultProvider = normalizeProvider(options.provider);
-                const prompted = await promptTokenConfig(defaultProvider);
-                await setApiKey(prompted.provider, prompted.apiKey, prompted.useKeychain);
-                console.log(`✓ ${prompted.provider} token saved${prompted.useKeychain ? " securely in system keychain" : " to config file at ~/.megabuff/config.json"}`);
-                if (!prompted.useKeychain) {
-                    console.log("  Tip: Use --keychain flag for more secure storage");
-                }
-                return;
+            const provider = normalizeProvider(options.provider);
+            if (!provider) {
+                console.error(`Error: Invalid provider '${options.provider}'. Valid options: ${PROVIDERS.join(", ")}`);
+                process.exit(1);
             }
 
-            const provider = normalizeProvider(options.provider) || "openai";
-            await setApiKey(provider, token, options.keychain || false);
+            let finalToken = token;
+            if (!finalToken) {
+                if (!process.stdin.isTTY) {
+                    console.error("Error: Missing token argument. Provide it inline or run in an interactive terminal.");
+                    process.exit(1);
+                }
+                const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+                try {
+                    finalToken = (await rl.question("Enter your API token: ")).trim();
+                } finally {
+                    rl.close();
+                }
+            }
+
+            if (!finalToken) {
+                console.error("Error: No token provided");
+                process.exit(1);
+            }
+
+            await setApiKey(provider, finalToken, options.keychain || false);
             if (options.keychain) {
                 console.log(`✓ ${provider} token saved securely in system keychain`);
             } else {
-                console.log(`✓ ${provider} token saved to config file at ~/.megabuff/config.json`);
+                console.log(`✓ ${provider} token saved to config file`);
                 console.log("  Tip: Use --keychain flag for more secure storage");
             }
+        } catch (error) {
+            console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+            process.exit(1);
+        }
+    });
+
+configCmd
+    .command("provider")
+    .description("Get or set the default provider")
+    .argument("[provider]", `Provider (${PROVIDERS.join(", ")})`)
+    .action(async (providerArg: string | undefined) => {
+        try {
+            if (!providerArg) {
+                const p = await getProvider();
+                console.log(`Default provider: ${p}`);
+                return;
+            }
+
+            const p = normalizeProvider(providerArg);
+            if (!p) {
+                console.error(`Error: Invalid provider '${providerArg}'. Valid options: ${PROVIDERS.join(", ")}`);
+                process.exit(1);
+            }
+
+            await setProvider(p);
+            console.log(`✓ Default provider set to: ${p}`);
+        } catch (error) {
+            console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+            process.exit(1);
+        }
+    });
+
+configCmd
+    .command("model")
+    .description("Get or set the model (auto-sets provider)")
+    .argument("[model]", "Model name (e.g., gpt-4o, claude-sonnet-4-5)")
+    .action(async (modelArg: string | undefined) => {
+        try {
+            if (!modelArg) {
+                const m = await getModel();
+                const p = await getProvider();
+                console.log(`Current model: ${m || "(default for provider)"}`);
+                console.log(`Current provider: ${p}`);
+                return;
+            }
+
+            const provider = getProviderForModel(modelArg);
+            if (!provider) {
+                console.error(`Error: Unknown model '${modelArg}'`);
+                console.error("\nAvailable models:");
+                PROVIDERS.forEach(p => {
+                    const models = getModelsByProvider(p);
+                    if (models.length > 0) {
+                        console.error(`\n${formatProviderName(p)}:`);
+                        models.forEach(m => console.error(`  - ${m}`));
+                    }
+                });
+                process.exit(1);
+            }
+
+            await setModel(modelArg);
+            console.log(`✓ Model set to: ${modelArg}`);
+            console.log(`✓ Provider auto-set to: ${provider}`);
         } catch (error) {
             console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
             process.exit(1);
@@ -411,17 +619,19 @@ configCmd
         try {
             const config = await getConfig();
             const selectedProvider = await getProvider();
+            const selectedModel = await getModel();
             const providerStatuses = await Promise.all(
                 PROVIDERS.map(async (p) => [p, await hasApiKey(p)] as const)
             );
 
             console.log("Current configuration:");
             console.log(`  Provider: ${selectedProvider}`);
-            for (const [p, ok] of providerStatuses) {
-                console.log(`  ${p} token: ${ok ? "✓ Configured" : "✗ Not configured"}`);
-            }
+            console.log(`  Model: ${selectedModel || "(default for provider)"}`);
             console.log(`  Storage: ${config.useKeychain ? "System Keychain" : "Config File"}`);
-            console.log(`  Model: ${config.model || "gpt-4o-mini (default)"}`);
+            console.log("\nAPI Tokens:");
+            for (const [p, ok] of providerStatuses) {
+                console.log(`  ${p}: ${ok ? "✓ Configured" : "✗ Not configured"}`);
+            }
             console.log(`\nConfig location: ~/.megabuff/config.json`);
         } catch (error) {
             console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -431,7 +641,7 @@ configCmd
 
 configCmd
     .command("remove")
-    .description("Remove saved token")
+    .description("Remove saved token for a provider")
     .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
     .action(async (options) => {
         try {

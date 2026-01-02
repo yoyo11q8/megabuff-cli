@@ -1,6 +1,6 @@
 # MegaBuff
 
-AI prompt optimizer CLI - improve your prompts with multiple input/output options
+AI-powered prompt optimizer CLI with multi-provider support (OpenAI & Anthropic). Improve your prompts with BYOK (Bring Your Own Key) and flexible input/output options.
 
 ## Table of Contents
 
@@ -118,33 +118,28 @@ MegaBuff can also use **Anthropic (Claude)** if you provide your own Anthropic A
 
 Once you have your provider API key, configure it using one of these methods:
 
-#### Option 1: Save to Config (Recommended)
+#### Option 1: Interactive Setup (Recommended)
 
 The easiest way to get started:
 
 ```bash
-# Interactive setup (recommended)
-# - pick provider
-# - paste token
-megabuff config set
+# Interactive configuration menu
+megabuff config
 
-# Interactive setup with provider pre-selected
-megabuff config set --provider anthropic
+# Then choose:
+# 1) Set API token for a provider
+# Pick OpenAI or Anthropic, paste your key, choose storage method
 
-# Save an OpenAI key to config file (default provider is openai)
-megabuff config set sk-your-api-key-here
-
-# Or save to system keychain (more secure)
-megabuff config set sk-your-api-key-here --keychain
-
-# Save an Anthropic key
-megabuff config set --provider anthropic sk-ant-your-api-key-here
-
-# Save an Anthropic key to keychain
-megabuff config set --provider anthropic sk-ant-your-api-key-here --keychain
+# Or use the direct token command
+megabuff config token sk-your-api-key-here --provider openai
+megabuff config token sk-ant-your-key --provider anthropic --keychain
 ```
 
 This saves your key for future use. You only need to do this once!
+
+**Storage Options:**
+- **Config file** (default): `~/.megabuff/config.json`
+- **System keychain** (more secure): macOS Keychain, Windows Credential Manager, or Linux Secret Service
 
 #### Option 2: Environment Variable
 
@@ -172,31 +167,67 @@ The CLI checks for your token in this order (per provider):
 
 ## Configuration Commands
 
+### Interactive Config Menu
+
+Run `megabuff config` for an interactive configuration menu:
+
 ```bash
-# Interactive setup (pick provider + paste token)
-megabuff config set
+megabuff config
 
-# Interactive setup with provider pre-selected
-megabuff config set --provider anthropic
+# Shows:
+# ╭─────────────────────────────────────╮
+# │   MegaBuff Configuration Setup     │
+# ╰─────────────────────────────────────╯
+#
+# What would you like to configure?
+#
+#   1) Set API token for a provider
+#   2) Set default provider
+#   3) Set model (auto-selects provider)
+#   4) View current configuration
+#   5) Exit
+```
 
-# Save your OpenAI key (default provider)
-megabuff config set sk-your-api-key-here
+### Direct Commands
 
-# Save your Anthropic key
-megabuff config set --provider anthropic sk-ant-your-api-key-here
+```bash
+# Set API token for a provider
+megabuff config token sk-your-api-key-here --provider openai
+megabuff config token sk-ant-... --provider anthropic --keychain
 
-# Save to keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-megabuff config set sk-your-api-key-here --keychain
+# Set default provider
+megabuff config provider anthropic
+megabuff config provider  # show current provider
 
-# Show current configuration
+# Set model (automatically sets provider)
+megabuff config model claude-sonnet-4-5  # sets provider to anthropic
+megabuff config model gpt-4o             # sets provider to openai
+megabuff config model                     # show current model
+
+# Show all configuration
 megabuff config show
 
-# Remove a saved key (defaults to openai if --provider is omitted)
-megabuff config remove
-
-# Remove a saved Anthropic key
+# Remove a saved token
 megabuff config remove --provider anthropic
 ```
+
+### Available Models
+
+**OpenAI:**
+- `gpt-4o`
+- `gpt-4o-mini` (default)
+- `gpt-4-turbo`
+- `gpt-4`
+- `gpt-3.5-turbo`
+
+**Anthropic:**
+- `claude-sonnet-4-5-20250929` (latest)
+- `claude-sonnet-4-5`
+- `claude-sonnet-4`
+- `claude-3-5-sonnet-20241022`
+- `claude-3-opus-20240229`
+- `claude-3-sonnet-20240229`
+- `claude-3-haiku-20240307`
 
 ## Development
 
@@ -315,8 +346,11 @@ megabuff optimize "your prompt" | grep "specific"
 ## Examples
 
 ```bash
-# Quick inline optimization (auto-copies to clipboard)
+# Quick inline optimization with OpenAI (auto-copies to clipboard)
 megabuff optimize "Write code for user auth"
+
+# Use Anthropic (Claude) instead
+megabuff optimize --provider anthropic "Write code for user auth"
 
 # From file with interactive view (auto-copies)
 megabuff optimize --file my-prompt.txt --interactive
@@ -330,22 +364,37 @@ megabuff optimize "Your prompt" --no-copy
 # Save to file without clipboard
 megabuff optimize --file prompt.txt --output result.txt --no-copy
 
-# Use specific API key
+# Use specific API key (overrides config)
 megabuff optimize "Your prompt" --api-key sk-your-key-here
 
-# Use Anthropic (Claude)
-megabuff optimize --provider anthropic "Rewrite this prompt to be clearer"
+# Set default provider to Anthropic, then optimize
+megabuff config provider anthropic
+megabuff optimize "Rewrite this prompt to be clearer"
+
+# Set a specific model (auto-sets provider)
+megabuff config model claude-sonnet-4-5
+megabuff optimize "Explain quantum computing"
 ```
 
 ## How It Works
 
-The CLI uses OpenAI's GPT-4o-mini model to analyze and optimize your prompts. It:
+MegaBuff supports multiple AI providers to optimize your prompts:
 
+**Providers:**
+- **OpenAI** (default): Uses GPT-4o-mini for fast, cost-effective optimization
+- **Anthropic**: Uses Claude Sonnet 4.5 for advanced reasoning and optimization
+
+The optimization process:
 1. Identifies ambiguities or unclear instructions
 2. Adds relevant context that would improve results
 3. Structures the prompt for clarity
 4. Specifies expected output format if not present
 5. Makes the prompt more specific and actionable
+
+**Model Selection:**
+- Set a specific model with `megabuff config model <model-name>`
+- Provider is automatically selected based on the model
+- Or explicitly choose provider with `--provider` flag
 
 ## VS Code Integration
 
