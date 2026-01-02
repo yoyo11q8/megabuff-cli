@@ -12,7 +12,7 @@ const program = new Command();
 program
     .name("megabuff")
     .description("AI prompt optimizer CLI")
-    .version("0.1.0");
+    .version("Beta");
 
 /**
  * Get input from various sources with priority:
@@ -144,6 +144,55 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
         }
         throw error;
     }
+}
+
+function formatProviderName(provider: Provider): string {
+    if (provider === "openai") return "OpenAI";
+    if (provider === "anthropic") return "Anthropic";
+    if (provider === "google") return "Google";
+    if (provider === "azure-openai") return "Azure OpenAI";
+    return provider;
+}
+
+function createSpinner(message: string) {
+    // Only show spinners in interactive terminals (don't break pipes/logs)
+    const enabled = !!process.stderr.isTTY;
+    const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let i = 0;
+    let timer: NodeJS.Timeout | undefined;
+    let lastLen = 0;
+
+    const render = (text: string) => {
+        const frame = frames[i++ % frames.length];
+        const line = `${frame} ${text}`;
+        const padded = line + " ".repeat(Math.max(0, lastLen - line.length));
+        lastLen = Math.max(lastLen, line.length);
+        process.stderr.write(`\r${padded}`);
+    };
+
+    return {
+        start() {
+            if (!enabled) return;
+            render(message);
+            timer = setInterval(() => render(message), 80);
+        },
+        stop(finalText?: string) {
+            if (!enabled) return;
+            if (timer) clearInterval(timer);
+            timer = undefined;
+            const text = finalText ?? message;
+            const padded = text + " ".repeat(Math.max(0, lastLen - text.length));
+            process.stderr.write(`\r${padded}\n`);
+        },
+        fail(finalText?: string) {
+            if (!enabled) return;
+            if (timer) clearInterval(timer);
+            timer = undefined;
+            const text = finalText ?? message;
+            const padded = text + " ".repeat(Math.max(0, lastLen - text.length));
+            process.stderr.write(`\r${padded}\n`);
+        }
+    };
 }
 
 function formatProviderLabel(p: Provider): string {
@@ -354,16 +403,25 @@ program
             }
 
             // Route to the appropriate provider's optimization function
+            const spinner = createSpinner(`Optimizing with ${formatProviderName(provider)}...`);
+            spinner.start();
+
             let optimized: string;
-            if (provider === "openai") {
-                optimized = await optimizePromptOpenAI(original, apiKey);
-            } else if (provider === "anthropic") {
-                optimized = await optimizePromptAnthropic(original, apiKey);
-            } else {
-                throw new Error(
-                    `Provider '${provider}' is not supported yet in optimize. ` +
-                    `Supported providers: openai, anthropic`
-                );
+            try {
+                if (provider === "openai") {
+                    optimized = await optimizePromptOpenAI(original, apiKey);
+                } else if (provider === "anthropic") {
+                    optimized = await optimizePromptAnthropic(original, apiKey);
+                } else {
+                    throw new Error(
+                        `Provider '${provider}' is not supported yet in optimize. ` +
+                        `Supported providers: openai, anthropic`
+                    );
+                }
+                spinner.stop(`✓ Optimized with ${formatProviderName(provider)}`);
+            } catch (e) {
+                spinner.fail(`✗ Optimization failed (${formatProviderName(provider)})`);
+                throw e;
             }
 
             await outputResult(original, optimized, options);

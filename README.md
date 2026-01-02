@@ -14,6 +14,7 @@ AI prompt optimizer CLI - improve your prompts with multiple input/output option
     - [Option 3: Pass as Flag](#option-3-pass-as-flag)
   - [API Key Priority](#api-key-priority)
 - [Configuration Commands](#configuration-commands)
+- [Feature requests or contributing](#feature-requests--contributing)
 - [Development](#development)
 - [Build](#build)
 - [Install Globally](#install-globally)
@@ -381,6 +382,12 @@ Simply use the CLI in VS Code's integrated terminal:
 pbpaste | megabuff optimize  # macOS
 xclip -o | megabuff optimize  # Linux
 ```
+
+## Feature requests or contributing
+
+Want a feature or want to contribute one? Please open an issue here:
+
+- [GitHub Issues](https://github.com/thesupermegabuff/megabuff-cli/issues)
 
 ## Publishing to npm
 
