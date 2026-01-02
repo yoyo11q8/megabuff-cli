@@ -132,8 +132,8 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
             ]
         });
 
-        const content = response.content[0];
-        if (content.type === "text") {
+        const content = response.content?.[0];
+        if (content?.type === "text") {
             return content.text;
         }
 
