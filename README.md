@@ -2,6 +2,45 @@
 
 AI prompt optimizer CLI - improve your prompts with multiple input/output options
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Setup](#setup)
+  - [Getting Your OpenAI API Key (BYOK)](#getting-your-openai-api-key-byok)
+  - [Getting Your Anthropic API Key (BYOK)](#getting-your-anthropic-api-key-byok)
+  - [Configuring Your API Key](#configuring-your-api-key)
+    - [Option 1: Save to Config (Recommended)](#option-1-save-to-config-recommended)
+    - [Option 2: Environment Variable](#option-2-environment-variable)
+    - [Option 3: Pass as Flag](#option-3-pass-as-flag)
+  - [API Key Priority](#api-key-priority)
+- [Configuration Commands](#configuration-commands)
+- [Development](#development)
+- [Build](#build)
+- [Install Globally](#install-globally)
+- [Usage](#usage)
+  - [1. Inline Argument (Quick & Simple)](#1-inline-argument-quick--simple)
+  - [2. File Input](#2-file-input)
+  - [3. Stdin Pipe](#3-stdin-pipe)
+  - [4. Interactive Mode](#4-interactive-mode)
+- [Output Options](#output-options)
+  - [Default: Print to stdout AND copy to clipboard](#default-print-to-stdout-and-copy-to-clipboard)
+  - [Disable clipboard copy](#disable-clipboard-copy)
+  - [Save to file](#save-to-file)
+  - [Interactive comparison view](#interactive-comparison-view)
+  - [Combine options](#combine-options)
+- [Examples](#examples)
+- [How It Works](#how-it-works)
+- [VS Code Integration: WIP](#vs-code-integration)
+  - [Option 1: VS Code Extension (Full Experience)](#option-1-vs-code-extension-full-experience)
+  - [Option 2: VS Code Tasks (Quick Setup)](#option-2-vs-code-tasks-quick-setup)
+  - [Option 3: Terminal Integration](#option-3-terminal-integration)
+- [Publishing to npm](#publishing-to-npm)
+  - [First-time Setup](#first-time-setup)
+  - [Publishing Steps](#publishing-steps)
+  - [Publishing Updates](#publishing-updates)
+  - [What Gets Published](#what-gets-published)
+  - [After Publishing](#after-publishing)
+
 ## Installation
 
 Install MegaBuff globally:
