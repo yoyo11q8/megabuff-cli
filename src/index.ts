@@ -286,7 +286,10 @@ async function outputResult(
     if (options.copy !== false) {
         try {
             await clipboardy.default.write(optimized);
-            console.error("✓ Optimized prompt copied to clipboard");
+            console.error("✓ Copied to clipboard — press Ctrl+V (or Paste) to use the optimized prompt");
+            console.error("");
+            console.error("──────────────────────────────────────────────────");
+            console.error("");
         } catch (error) {
             const errMsg = error instanceof Error ? error.message : String(error);
             console.error(`⚠ Failed to copy to clipboard: ${errMsg}`);
