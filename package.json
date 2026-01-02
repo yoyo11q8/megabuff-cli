@@ -1,6 +1,6 @@
 {
   "name": "megabuff",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AI-powered prompt optimizer CLI with BYOK (Bring Your Own Key) support for OpenAI",
   "type": "module",
   "main": "./dist/index.js",
@@ -43,7 +43,7 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
-   "bin": {
+  "bin": {
     "megabuff": "./dist/index.js"
   }
 }
