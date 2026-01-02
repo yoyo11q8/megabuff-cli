@@ -123,6 +123,14 @@ Once you have your provider API key, configure it using one of these methods:
 The easiest way to get started:
 
 ```bash
+# Interactive setup (recommended)
+# - pick provider
+# - paste token
+megabuff config set
+
+# Interactive setup with provider pre-selected
+megabuff config set --provider anthropic
+
 # Save an OpenAI key to config file (default provider is openai)
 megabuff config set sk-your-api-key-here
 
@@ -165,6 +173,12 @@ The CLI checks for your token in this order (per provider):
 ## Configuration Commands
 
 ```bash
+# Interactive setup (pick provider + paste token)
+megabuff config set
+
+# Interactive setup with provider pre-selected
+megabuff config set --provider anthropic
+
 # Save your OpenAI key (default provider)
 megabuff config set sk-your-api-key-here
 

@@ -274,6 +274,43 @@ async function promptFirstRunConfig(): Promise<{ provider: Provider; apiKey: str
     }
 }
 
+async function promptTokenConfig(defaultProvider?: Provider): Promise<{ provider: Provider; apiKey: string; useKeychain: boolean }> {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+        console.log("\nConfigure BYOK token");
+
+        let provider: Provider | undefined = defaultProvider;
+        if (!provider) {
+            console.log("Select the provider that will supply the token:\n");
+            PROVIDERS.forEach((p, idx) => {
+                console.log(`  ${idx + 1}) ${formatProviderLabel(p)}`);
+            });
+            while (!provider) {
+                const raw = await rl.question("\nProvider (number or name): ");
+                const trimmed = raw.trim();
+                const asNum = Number(trimmed);
+                if (Number.isFinite(asNum) && asNum >= 1 && asNum <= PROVIDERS.length) {
+                    provider = PROVIDERS[asNum - 1];
+                    break;
+                }
+                provider = normalizeProvider(trimmed);
+                if (!provider) console.log(`Please choose one of: ${PROVIDERS.join(", ")}`);
+            }
+        }
+
+        const apiKey = (await rl.question("Enter your BYOK token: ")).trim();
+        if (!apiKey) throw new Error("No token provided.");
+
+        const store = (await rl.question("Store in system keychain? (Y/n): ")).trim().toLowerCase();
+        const useKeychain = store === "" || store === "y" || store === "yes";
+
+        if (!provider) throw new Error("No provider selected.");
+        return { provider, apiKey, useKeychain };
+    } finally {
+        rl.close();
+    }
+}
+
 /**
  * Output the result based on options
  */
@@ -333,11 +370,26 @@ const configCmd = program
 configCmd
     .command("set")
     .description("Set your BYOK token for a provider")
-    .argument("<token>", "Your provider API key / token")
-    .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`, "openai")
+    .argument("[token]", "Your provider API key / token (omit to be prompted)")
+    .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
     .option("--keychain", "Store in system keychain (more secure)")
-    .action(async (token, options) => {
+    .action(async (token: string | undefined, options) => {
         try {
+            // Interactive flow when token isn't provided
+            if (!token) {
+                if (!process.stdin.isTTY || !process.stdout.isTTY) {
+                    throw new Error("Missing token argument. Provide it inline or run in an interactive terminal to be prompted.");
+                }
+                const defaultProvider = normalizeProvider(options.provider);
+                const prompted = await promptTokenConfig(defaultProvider);
+                await setApiKey(prompted.provider, prompted.apiKey, prompted.useKeychain);
+                console.log(`✓ ${prompted.provider} token saved${prompted.useKeychain ? " securely in system keychain" : " to config file at ~/.megabuff/config.json"}`);
+                if (!prompted.useKeychain) {
+                    console.log("  Tip: Use --keychain flag for more secure storage");
+                }
+                return;
+            }
+
             const provider = normalizeProvider(options.provider) || "openai";
             await setApiKey(provider, token, options.keychain || false);
             if (options.keychain) {
