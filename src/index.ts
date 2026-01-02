@@ -3,6 +3,7 @@ import { Command } from "commander";
 import * as fs from "fs/promises";
 import * as readline from "readline/promises";
 import OpenAI from "openai";
+import * as clipboardy from "clipboardy";
 import { getApiKey, setApiKey, removeApiKey, hasApiKey, getConfig } from "./config.js";
 
 const program = new Command();
@@ -63,6 +64,8 @@ async function getInput(inlinePrompt: string | undefined, options: { file?: stri
     });
 }
 
+// TODO
+
 /**
  * Optimize a prompt using OpenAI
  */
@@ -109,12 +112,27 @@ Return ONLY the optimized prompt, without explanations or meta-commentary.`;
 async function outputResult(
     original: string,
     optimized: string,
-    options: { output?: string; interactive?: boolean }
+    options: { output?: string; interactive?: boolean; copy?: boolean }
 ): Promise<void> {
+    // Copy to clipboard by default (unless --no-copy is used)
+    if (options.copy !== false) {
+        try {
+            await clipboardy.default.write(optimized);
+            console.error("✓ Optimized prompt copied to clipboard");
+        } catch (error) {
+            const errMsg = error instanceof Error ? error.message : String(error);
+            console.error(`⚠ Failed to copy to clipboard: ${errMsg}`);
+        }
+    }
+
     // If output file specified, write to file
     if (options.output) {
         await fs.writeFile(options.output, optimized, "utf-8");
         console.error(`✓ Optimized prompt saved to: ${options.output}`);
+        // Still print to stdout for piping
+        if (!options.interactive) {
+            console.log(optimized);
+        }
         return;
     }
 
@@ -201,6 +219,7 @@ program
     .option("-f, --file <path>", "Read prompt from file")
     .option("-o, --output <path>", "Write optimized prompt to file")
     .option("-i, --interactive", "Show interactive comparison view")
+    .option("--no-copy", "Don't copy optimized prompt to clipboard (copy is default)")
     .option("-k, --api-key <key>", "OpenAI API key (overrides saved config)")
     .action(async (inlinePrompt, options) => {
         try {

@@ -14,7 +14,42 @@ originally used nvm use 22
 
 ## Setup
 
-### Option 1: Save API Key to Config (Recommended)
+### Getting Your OpenAI API Key (BYOK)
+
+MegaBuff uses a **BYOK (Bring Your Own Key)** model, meaning you use your own OpenAI API key. This gives you:
+- ✅ Direct control over your usage and costs
+- ✅ Pay-per-use pricing (typically pennies per optimization)
+- ✅ Full privacy - your prompts go directly to OpenAI
+- ✅ Ability to set your own usage limits
+
+**Steps to get your OpenAI API Key:**
+
+1. **Create an OpenAI Account**
+   - Sign up or log in at [platform.openai.com](https://platform.openai.com/)
+   - Note: This is separate from the standard ChatGPT consumer site
+
+2. **Set up Billing**
+   - The API runs on a pay-per-use model
+   - Add a payment method in the [Billing](https://platform.openai.com/settings/organization/billing/overview) section
+   - You can set usage limits to manage costs
+   - Typical cost: ~$0.001-0.01 per prompt optimization (using gpt-4o-mini)
+
+3. **Generate Your API Key**
+   - Navigate to [API Keys](https://platform.openai.com/api-keys) in the sidebar
+   - Click **"+ Create new secret key"**
+   - Give your key a descriptive name (e.g., "MegaBuff CLI")
+   - Click **"Create secret key"**
+
+4. **Save Your Key Immediately**
+   - **Important**: Copy the key right away - OpenAI only shows it once!
+   - Store it securely - you'll need to generate a new one if you lose it
+   - The key starts with `sk-`
+
+### Configuring Your API Key
+
+Once you have your OpenAI API key, configure it using one of these methods:
+
+#### Option 1: Save to Config (Recommended)
 
 The easiest way to get started:
 
@@ -28,7 +63,7 @@ megabuff config set sk-your-api-key-here --keychain
 
 This saves your key for future use. You only need to do this once!
 
-### Option 2: Environment Variable
+#### Option 2: Environment Variable
 
 ```bash
 export OPENAI_API_KEY="sk-your-api-key-here"
@@ -36,7 +71,7 @@ export OPENAI_API_KEY="sk-your-api-key-here"
 
 Add to your shell profile (`.bashrc`, `.zshrc`, etc.) to persist across sessions.
 
-### Option 3: Pass as Flag
+#### Option 3: Pass as Flag
 
 ```bash
 megabuff optimize "your prompt" --api-key sk-your-key-here
@@ -132,39 +167,69 @@ megabuff optimize
 
 ## Output Options
 
-### Default: Print to stdout (pipeable)
+### Default: Print to stdout AND copy to clipboard
+
+By default, the optimized prompt is:
+1. Printed to stdout (so you can pipe it)
+2. Automatically copied to your clipboard (works on macOS, Windows, and Linux)
 
 ```bash
-megabuff optimize "your prompt" > output.txt
-megabuff optimize "your prompt" | pbcopy  # Copy to clipboard on macOS
+megabuff optimize "your prompt"
+# Result is both printed AND copied to clipboard
+```
+
+### Disable clipboard copy
+
+If you don't want automatic clipboard copy:
+
+```bash
+megabuff optimize "your prompt" --no-copy
 ```
 
 ### Save to file
 
 ```bash
 megabuff optimize "your prompt" --output result.txt
+# Still copies to clipboard by default
 ```
 
 ### Interactive comparison view
 
 ```bash
 megabuff optimize "your prompt" --interactive
+# Shows before/after comparison AND copies to clipboard
+```
+
+### Combine options
+
+```bash
+# Save to file without clipboard
+megabuff optimize "your prompt" --output result.txt --no-copy
+
+# Interactive view without clipboard
+megabuff optimize "your prompt" --interactive --no-copy
+
+# Pipe to another command (clipboard still works)
+megabuff optimize "your prompt" | grep "specific"
 ```
 
 ## Examples
 
 ```bash
-# Quick inline optimization
+# Quick inline optimization (auto-copies to clipboard)
 megabuff optimize "Write code for user auth"
 
-# From file with interactive view
+# From file with interactive view (auto-copies)
 megabuff optimize --file my-prompt.txt --interactive
 
-# Pipe and save
+# Pipe and save (auto-copies)
 cat input.txt | megabuff optimize --output optimized.txt
 
-# Combine options
-megabuff optimize --file prompt.txt --output result.txt
+# Disable clipboard copy
+megabuff optimize "Your prompt" --no-copy
+
+# Save to file without clipboard
+megabuff optimize --file prompt.txt --output result.txt --no-copy
 
 # Use specific API key
 megabuff optimize "Your prompt" --api-key sk-your-key-here
