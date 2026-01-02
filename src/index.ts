@@ -3,8 +3,9 @@ import { Command } from "commander";
 import * as fs from "fs/promises";
 import * as readline from "readline/promises";
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import * as clipboardy from "clipboardy";
-import { getApiKey, setApiKey, removeApiKey, hasApiKey, getConfig } from "./config.js";
+import { getApiKey, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, normalizeProvider, PROVIDERS, type Provider } from "./config.js";
 
 const program = new Command();
 
@@ -64,15 +65,10 @@ async function getInput(inlinePrompt: string | undefined, options: { file?: stri
     });
 }
 
-// TODO
-
 /**
  * Optimize a prompt using OpenAI
  */
-async function optimizePrompt(prompt: string, apiKey: string | undefined): Promise<string> {
-    if (!apiKey) {
-        throw new Error("OpenAI API key not found. Set OPENAI_API_KEY environment variable.");
-    }
+async function optimizePromptOpenAI(prompt: string, apiKey: string): Promise<string> {
 
     const openai = new OpenAI({ apiKey });
 
@@ -103,6 +99,101 @@ Return ONLY the optimized prompt, without explanations or meta-commentary.`;
             throw new Error(`OpenAI API error: ${error.message}`);
         }
         throw error;
+    }
+}
+
+/**
+ * Optimize a prompt using Anthropic Claude
+ */
+async function optimizePromptAnthropic(prompt: string, apiKey: string): Promise<string> {
+    const anthropic = new Anthropic({ apiKey });
+
+    const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
+
+When given a prompt, you should:
+1. Identify ambiguities or unclear instructions
+2. Add relevant context that would improve results
+3. Structure the prompt for better clarity
+4. Ensure the prompt follows best practices
+5. Make it more specific and actionable
+
+Return ONLY the optimized prompt without explanations or meta-commentary.`;
+
+    try {
+        const response = await anthropic.messages.create({
+            model: "claude-sonnet-4-5-20250929",
+            max_tokens: 4096,
+            system: systemPrompt,
+            messages: [
+                {
+                    role: "user",
+                    content: `Optimize this prompt:\n\n${prompt}`
+                }
+            ]
+        });
+
+        const content = response.content[0];
+        if (content.type === "text") {
+            return content.text;
+        }
+
+        throw new Error("Unexpected response format from Anthropic API");
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`Anthropic API error: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
+function formatProviderLabel(p: Provider): string {
+    if (p === "openai") return "OpenAI";
+    if (p === "anthropic") return "Anthropic";
+    if (p === "google") return "Google Gemini (coming soon)";
+    if (p === "azure-openai") return "Azure OpenAI (coming soon)";
+    return p;
+}
+
+async function promptFirstRunConfig(): Promise<{ provider: Provider; apiKey: string; useKeychain: boolean }> {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+        console.log("\nNo BYOK token configured yet.");
+        console.log("Select the provider that will supply the token:\n");
+
+        PROVIDERS.forEach((p, idx) => {
+            console.log(`  ${idx + 1}) ${formatProviderLabel(p)}`);
+        });
+
+        let provider: Provider | undefined;
+        while (!provider) {
+            const raw = await rl.question("\nProvider (number or name): ");
+            const trimmed = raw.trim();
+            const asNum = Number(trimmed);
+            if (Number.isFinite(asNum) && asNum >= 1 && asNum <= PROVIDERS.length) {
+                provider = PROVIDERS[asNum - 1];
+                break;
+            }
+            provider = normalizeProvider(trimmed);
+            if (!provider) {
+                console.log(`Please choose one of: ${PROVIDERS.join(", ")}`);
+            }
+        }
+
+        const apiKey = (await rl.question("Enter your BYOK token: ")).trim();
+        if (!apiKey) {
+            throw new Error("No token provided.");
+        }
+
+        const store = (await rl.question("Store in system keychain? (Y/n): ")).trim().toLowerCase();
+        const useKeychain = store === "" || store === "y" || store === "yes";
+
+        if (!provider) {
+            throw new Error("No provider selected.");
+        }
+
+        return { provider, apiKey, useKeychain };
+    } finally {
+        rl.close();
     }
 }
 
@@ -161,16 +252,18 @@ const configCmd = program
 
 configCmd
     .command("set")
-    .description("Set your OpenAI API key")
-    .argument("<api-key>", "Your OpenAI API key")
+    .description("Set your BYOK token for a provider")
+    .argument("<token>", "Your provider API key / token")
+    .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`, "openai")
     .option("--keychain", "Store in system keychain (more secure)")
-    .action(async (apiKey, options) => {
+    .action(async (token, options) => {
         try {
-            await setApiKey(apiKey, options.keychain || false);
+            const provider = normalizeProvider(options.provider) || "openai";
+            await setApiKey(provider, token, options.keychain || false);
             if (options.keychain) {
-                console.log("✓ API key saved securely in system keychain");
+                console.log(`✓ ${provider} token saved securely in system keychain`);
             } else {
-                console.log("✓ API key saved to config file at ~/.megabuff/config.json");
+                console.log(`✓ ${provider} token saved to config file at ~/.megabuff/config.json`);
                 console.log("  Tip: Use --keychain flag for more secure storage");
             }
         } catch (error) {
@@ -185,10 +278,16 @@ configCmd
     .action(async () => {
         try {
             const config = await getConfig();
-            const hasKey = await hasApiKey();
+            const selectedProvider = await getProvider();
+            const providerStatuses = await Promise.all(
+                PROVIDERS.map(async (p) => [p, await hasApiKey(p)] as const)
+            );
 
             console.log("Current configuration:");
-            console.log(`  API Key: ${hasKey ? "✓ Configured" : "✗ Not configured"}`);
+            console.log(`  Provider: ${selectedProvider}`);
+            for (const [p, ok] of providerStatuses) {
+                console.log(`  ${p} token: ${ok ? "✓ Configured" : "✗ Not configured"}`);
+            }
             console.log(`  Storage: ${config.useKeychain ? "System Keychain" : "Config File"}`);
             console.log(`  Model: ${config.model || "gpt-4o-mini (default)"}`);
             console.log(`\nConfig location: ~/.megabuff/config.json`);
@@ -200,11 +299,13 @@ configCmd
 
 configCmd
     .command("remove")
-    .description("Remove saved API key")
-    .action(async () => {
+    .description("Remove saved token")
+    .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
+    .action(async (options) => {
         try {
-            await removeApiKey();
-            console.log("✓ API key removed from config and keychain");
+            const provider = await getProvider(options.provider);
+            await removeApiKey(provider);
+            console.log(`✓ ${provider} token removed from config and keychain`);
         } catch (error) {
             console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
             process.exit(1);
@@ -220,7 +321,8 @@ program
     .option("-o, --output <path>", "Write optimized prompt to file")
     .option("-i, --interactive", "Show interactive comparison view")
     .option("--no-copy", "Don't copy optimized prompt to clipboard (copy is default)")
-    .option("-k, --api-key <key>", "OpenAI API key (overrides saved config)")
+    .option("-k, --api-key <key>", "Provider API key/token (overrides saved config)")
+    .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
     .action(async (inlinePrompt, options) => {
         try {
             const original = await getInput(inlinePrompt, options);
@@ -230,10 +332,40 @@ program
                 process.exit(1);
             }
 
-            // Get API key with priority: CLI flag > env var > keychain > config file
-            const apiKey = await getApiKey(options.apiKey);
+            let provider = await getProvider(options.provider);
 
-            const optimized = await optimizePrompt(original, apiKey);
+            // Get API key with priority: CLI flag > env var > keychain > config file
+            let apiKey = await getApiKey(provider, options.apiKey);
+
+            // Interactive first-run setup (TTY only)
+            if (!apiKey && process.stdin.isTTY && process.stdout.isTTY) {
+                const firstRun = await promptFirstRunConfig();
+                await setApiKey(firstRun.provider, firstRun.apiKey, firstRun.useKeychain);
+                provider = firstRun.provider;
+                apiKey = await getApiKey(provider);
+            }
+
+            if (!apiKey) {
+                throw new Error(
+                    `No token configured for provider '${provider}'. ` +
+                    `Run: megabuff config set --provider ${provider} <token> ` +
+                    `or set the appropriate environment variable.`
+                );
+            }
+
+            // Route to the appropriate provider's optimization function
+            let optimized: string;
+            if (provider === "openai") {
+                optimized = await optimizePromptOpenAI(original, apiKey);
+            } else if (provider === "anthropic") {
+                optimized = await optimizePromptAnthropic(original, apiKey);
+            } else {
+                throw new Error(
+                    `Provider '${provider}' is not supported yet in optimize. ` +
+                    `Supported providers: openai, anthropic`
+                );
+            }
+
             await outputResult(original, optimized, options);
         } catch (error) {
             console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);

@@ -114,6 +114,8 @@ megabuff config remove
 Test your CLI during development:
 
 ```bash
+npm install
+
 # Using the dev script (recommended)
 npm run dev optimize "Write a function to sort arrays"
 

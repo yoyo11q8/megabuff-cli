@@ -5,9 +5,33 @@ import { homedir } from "os";
 const CONFIG_DIR = path.join(homedir(), ".megabuff");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 const SERVICE_NAME = "megabuff-cli";
-const ACCOUNT_NAME = "openai-api-key";
+// Legacy (pre-provider) keychain account name for backwards compatibility
+const LEGACY_ACCOUNT_NAME = "openai-api-key";
+
+export type Provider = "openai" | "anthropic" | "google" | "azure-openai";
+
+export const PROVIDERS: readonly Provider[] = ["openai", "anthropic", "google", "azure-openai"] as const;
+
+export function normalizeProvider(input: string | undefined): Provider | undefined {
+    if (!input) return undefined;
+    const v = input.trim().toLowerCase();
+    if (v === "openai") return "openai";
+    if (v === "anthropic") return "anthropic";
+    if (v === "google" || v === "gemini") return "google";
+    if (v === "azure-openai" || v === "azure") return "azure-openai";
+    return undefined;
+}
+
+function getAccountName(provider: Provider): string {
+    return `${provider}-api-key`;
+}
 
 interface Config {
+    // Selected default provider for commands that don't specify one
+    provider?: Provider;
+    // Provider-specific keys (used when not storing in keychain)
+    apiKeys?: Partial<Record<Provider, string>>;
+    // Legacy single-key storage (pre-provider). Kept for migrations only.
     apiKey?: string;
     useKeychain?: boolean;
     model?: string;
@@ -47,10 +71,16 @@ async function writeConfig(config: Config): Promise<void> {
 /**
  * Get API key from keychain
  */
-async function getKeychainKey(): Promise<string | null> {
+async function getKeychainKey(provider: Provider): Promise<string | null> {
     try {
         const keytar = await import("keytar");
-        return await keytar.getPassword(SERVICE_NAME, ACCOUNT_NAME);
+        const account = getAccountName(provider);
+        const val = await keytar.getPassword(SERVICE_NAME, account);
+        // Backwards-compat: older versions stored only OpenAI under a fixed name
+        if (!val && provider === "openai") {
+            return await keytar.getPassword(SERVICE_NAME, LEGACY_ACCOUNT_NAME);
+        }
+        return val;
     } catch (error) {
         // Keychain not available or error
         return null;
@@ -60,21 +90,43 @@ async function getKeychainKey(): Promise<string | null> {
 /**
  * Set API key in keychain
  */
-async function setKeychainKey(apiKey: string): Promise<void> {
+async function setKeychainKey(provider: Provider, apiKey: string): Promise<void> {
     const keytar = await import("keytar");
-    await keytar.setPassword(SERVICE_NAME, ACCOUNT_NAME, apiKey);
+    await keytar.setPassword(SERVICE_NAME, getAccountName(provider), apiKey);
 }
 
 /**
  * Delete API key from keychain
  */
-async function deleteKeychainKey(): Promise<void> {
+async function deleteKeychainKey(provider: Provider): Promise<void> {
     try {
         const keytar = await import("keytar");
-        await keytar.deletePassword(SERVICE_NAME, ACCOUNT_NAME);
+        await keytar.deletePassword(SERVICE_NAME, getAccountName(provider));
+        if (provider === "openai") {
+            await keytar.deletePassword(SERVICE_NAME, LEGACY_ACCOUNT_NAME);
+        }
     } catch (error) {
         // Ignore if not found
     }
+}
+
+/**
+ * Get the selected provider (CLI flag > config > default openai)
+ */
+export async function getProvider(cliProvider?: string): Promise<Provider> {
+    const normalized = normalizeProvider(cliProvider);
+    if (normalized) return normalized;
+    const config = await readConfig();
+    return config.provider || "openai";
+}
+
+/**
+ * Persist the selected provider in config (does not validate key presence)
+ */
+export async function setProvider(provider: Provider): Promise<void> {
+    const config = await readConfig();
+    config.provider = provider;
+    await writeConfig(config);
 }
 
 /**
@@ -84,50 +136,59 @@ async function deleteKeychainKey(): Promise<void> {
  * 3. Keychain (if configured)
  * 4. Config file
  */
-export async function getApiKey(cliKey?: string): Promise<string | undefined> {
+export async function getApiKey(provider: Provider, cliKey?: string): Promise<string | undefined> {
     // Priority 1: CLI flag
     if (cliKey) {
         return cliKey;
     }
 
     // Priority 2: Environment variable
-    if (process.env.OPENAI_API_KEY) {
-        return process.env.OPENAI_API_KEY;
-    }
+    if (provider === "openai" && process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
+    if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+    if (provider === "google" && process.env.GOOGLE_API_KEY) return process.env.GOOGLE_API_KEY;
+    if (provider === "azure-openai" && process.env.AZURE_OPENAI_API_KEY) return process.env.AZURE_OPENAI_API_KEY;
 
     const config = await readConfig();
 
     // Priority 3: Keychain
     if (config.useKeychain) {
-        const keychainKey = await getKeychainKey();
+        const keychainKey = await getKeychainKey(provider);
         if (keychainKey) {
             return keychainKey;
         }
     }
 
     // Priority 4: Config file
-    return config.apiKey;
+    const providerKey = config.apiKeys?.[provider];
+    if (providerKey) return providerKey;
+    // Backwards-compat: pre-provider single key was OpenAI
+    if (provider === "openai") return config.apiKey;
+    return undefined;
 }
 
 /**
  * Set API key in config or keychain
  */
-export async function setApiKey(apiKey: string, useKeychain: boolean = false): Promise<void> {
+export async function setApiKey(provider: Provider, apiKey: string, useKeychain: boolean = false): Promise<void> {
     const config = await readConfig();
+    config.provider = provider;
 
     if (useKeychain) {
         // Store in keychain
-        await setKeychainKey(apiKey);
-        // Update config to indicate keychain usage, but don't store the key
+        await setKeychainKey(provider, apiKey);
+        // Update config to indicate keychain usage, but don't store the key(s)
         config.useKeychain = true;
-        delete config.apiKey;
     } else {
         // Store in config file
-        config.apiKey = apiKey;
+        config.apiKeys = config.apiKeys || {};
+        config.apiKeys[provider] = apiKey;
         config.useKeychain = false;
         // Remove from keychain if it was there
-        await deleteKeychainKey();
+        await deleteKeychainKey(provider);
     }
+
+    // Clear legacy field if present (it maps to OpenAI only)
+    if (config.apiKey) delete config.apiKey;
 
     await writeConfig(config);
 }
@@ -151,24 +212,34 @@ export async function updateConfig(updates: Partial<Config>): Promise<void> {
 /**
  * Remove API key from config and keychain
  */
-export async function removeApiKey(): Promise<void> {
+export async function removeApiKey(provider: Provider): Promise<void> {
     const config = await readConfig();
-    delete config.apiKey;
-    config.useKeychain = false;
+    if (config.apiKeys?.[provider]) {
+        delete config.apiKeys[provider];
+    }
+    // Backwards-compat: legacy single key was OpenAI
+    if (provider === "openai" && config.apiKey) {
+        delete config.apiKey;
+    }
+    // Keep useKeychain as-is; user may be storing other providers there.
     await writeConfig(config);
-    await deleteKeychainKey();
+    await deleteKeychainKey(provider);
 }
 
 /**
  * Check if API key is configured
  */
-export async function hasApiKey(): Promise<boolean> {
+export async function hasApiKey(provider: Provider): Promise<boolean> {
     const config = await readConfig();
 
     if (config.useKeychain) {
-        const keychainKey = await getKeychainKey();
+        const keychainKey = await getKeychainKey(provider);
         return !!keychainKey;
     }
 
-    return !!config.apiKey;
+    const providerKey = config.apiKeys?.[provider];
+    if (providerKey) return true;
+    // Backwards-compat: pre-provider single key was OpenAI
+    if (provider === "openai") return !!config.apiKey;
+    return false;
 }
