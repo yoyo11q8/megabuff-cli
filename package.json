@@ -1,18 +1,37 @@
 {
-  "name": "megabuff-cli",
+  "name": "megabuff",
   "version": "0.1.0",
-  "description": "",
+  "description": "AI-powered prompt optimizer CLI with BYOK (Bring Your Own Key) support for OpenAI",
   "type": "module",
-  "main": "index.js",
+  "main": "./dist/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "prepublishOnly": "npm run build"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "ai",
+    "prompt",
+    "optimizer",
+    "openai",
+    "cli",
+    "chatgpt",
+    "prompt-engineering",
+    "byok",
+    "gpt-4",
+    "command-line"
+  ],
+  "author": "thesupermegabuff <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thesupermegabuff/megabuff-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/thesupermegabuff/megabuff-cli/issues"
+  },
+  "homepage": "https://github.com/thesupermegabuff/megabuff-cli#readme",
   "dependencies": {
     "commander": "^14.0.2",
     "openai": "^4.77.3",

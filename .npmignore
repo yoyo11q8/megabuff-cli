@@ -1,0 +1,31 @@
+# Source files (we only publish dist/)
+src/
+tsconfig.json
+
+# Development files
+node_modules/
+.vscode/
+*.log
+npm-debug.log*
+
+# Test files
+test/
+*.test.ts
+*.test.js
+
+# Git
+.git/
+.gitignore
+
+# Development tools
+.eslintrc*
+.prettierrc*
+*.config.js
+*.config.ts
+
+# Documentation (keep README.md)
+docs/
+
+# OS files
+.DS_Store
+Thumbs.db

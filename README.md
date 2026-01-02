@@ -1,15 +1,23 @@
-# MegaBuff CLI
+# MegaBuff
 
 AI prompt optimizer CLI - improve your prompts with multiple input/output options
 
 ## Installation
 
-Install dependencies:
+Install MegaBuff globally:
 
 ```bash
+npm install -g megabuff
+```
+
+Or for development:
+
+```bash
+git clone https://github.com/thesupermegabuff/megabuff-cli.git
+cd megabuff-cli
 npm install
 
-originally used nvm use 22
+# Originally used nvm use 22
 ```
 
 ## Setup
@@ -295,11 +303,100 @@ pbpaste | megabuff optimize  # macOS
 xclip -o | megabuff optimize  # Linux
 ```
 
-## Publishing
+## Publishing to npm
 
-Before publishing to npm, make sure to build:
+### First-time Setup
 
+1. **Create an npm account** at [npmjs.com/signup](https://www.npmjs.com/signup) if you don't have one
+
+2. **Login to npm** from your terminal:
+   ```bash
+   npm login
+   ```
+
+3. **Update package.json** with your information:
+   - Change `author` to your name and email
+   - Update `repository` URL with your GitHub username
+   - Update `bugs` and `homepage` URLs
+
+4. **Check if the package name is available**:
+   ```bash
+   npm search megabuff
+   ```
+   The name `megabuff` should be available (or use an alternative if taken)
+
+### Publishing Steps
+
+1. **Make sure everything is committed**:
+   ```bash
+   git status
+   git add .
+   git commit -m "Prepare for publish"
+   ```
+
+2. **Build the project**:
+   ```bash
+   npm run build
+   ```
+   This compiles TypeScript to JavaScript in the `dist/` folder
+
+3. **Test the package locally** (optional but recommended):
+   ```bash
+   npm pack
+   # This creates a .tgz file you can inspect
+   ```
+
+4. **Publish to npm**:
+   ```bash
+   npm publish
+   ```
+
+   The `prepublishOnly` script will automatically run `npm run build` before publishing.
+
+### Publishing Updates
+
+When you make changes and want to publish a new version:
+
+1. **Update the version** using semantic versioning:
+   ```bash
+   # For bug fixes (0.1.0 -> 0.1.1)
+   npm version patch
+
+   # For new features (0.1.0 -> 0.2.0)
+   npm version minor
+
+   # For breaking changes (0.1.0 -> 1.0.0)
+   npm version major
+   ```
+
+2. **Publish the update**:
+   ```bash
+   npm publish
+   ```
+
+3. **Push the version tag to GitHub**:
+   ```bash
+   git push && git push --tags
+   ```
+
+### What Gets Published
+
+The npm package includes:
+- ✅ `dist/` - Compiled JavaScript
+- ✅ `README.md` - Documentation
+- ✅ `package.json` - Package metadata
+- ✅ `LICENSE` - License file
+- ❌ `src/` - TypeScript source (excluded)
+- ❌ `node_modules/` - Dependencies (excluded)
+- ❌ Development files (excluded via .npmignore)
+
+### After Publishing
+
+Users can install your CLI globally with:
 ```bash
-npm run build
-npm publish
+npm install -g megabuff
 ```
+
+Your package will be available at:
+- npm: `https://www.npmjs.com/package/megabuff`
+- Docs: `https://github.com/thesupermegabuff/megabuff-cli`
