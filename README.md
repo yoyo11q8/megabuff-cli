@@ -53,20 +53,47 @@ MegaBuff uses a **BYOK (Bring Your Own Key)** model, meaning you use your own Op
    - Store it securely - you'll need to generate a new one if you lose it
    - The key starts with `sk-`
 
+### Getting Your Anthropic API Key (BYOK)
+
+MegaBuff can also use **Anthropic (Claude)** if you provide your own Anthropic API key.
+
+**Steps to get your Anthropic API Key:**
+
+1. **Create an Anthropic Console account**
+   - Sign up / log in at `https://console.anthropic.com/`
+
+2. **Set up billing / credits**
+   - Ensure your Anthropic account is enabled for API usage (billing/credits as required by Anthropic).
+
+3. **Create an API key**
+   - In the [Anthropic Dashboard Console](https://platform.claude.com/dashboard), go to **API Keys**
+   - Click **Create key**
+   - Name it something like "MegaBuff CLI"
+
+4. **Save your key immediately**
+   - Copy and store it somewhere secure
+   - Anthropic keys typically start with `sk-ant-`
+
 ### Configuring Your API Key
 
-Once you have your OpenAI API key, configure it using one of these methods:
+Once you have your provider API key, configure it using one of these methods:
 
 #### Option 1: Save to Config (Recommended)
 
 The easiest way to get started:
 
 ```bash
-# Save to config file
+# Save an OpenAI key to config file (default provider is openai)
 megabuff config set sk-your-api-key-here
 
 # Or save to system keychain (more secure)
 megabuff config set sk-your-api-key-here --keychain
+
+# Save an Anthropic key
+megabuff config set --provider anthropic sk-ant-your-api-key-here
+
+# Save an Anthropic key to keychain
+megabuff config set --provider anthropic sk-ant-your-api-key-here --keychain
 ```
 
 This saves your key for future use. You only need to do this once!
@@ -75,6 +102,7 @@ This saves your key for future use. You only need to do this once!
 
 ```bash
 export OPENAI_API_KEY="sk-your-api-key-here"
+export ANTHROPIC_API_KEY="sk-ant-your-api-key-here"
 ```
 
 Add to your shell profile (`.bashrc`, `.zshrc`, etc.) to persist across sessions.
@@ -83,21 +111,25 @@ Add to your shell profile (`.bashrc`, `.zshrc`, etc.) to persist across sessions
 
 ```bash
 megabuff optimize "your prompt" --api-key sk-your-key-here
+megabuff optimize --provider anthropic "your prompt" --api-key sk-ant-your-key-here
 ```
 
 ### API Key Priority
 
-The CLI checks for your API key in this order:
+The CLI checks for your token in this order (per provider):
 1. `--api-key` flag (highest priority)
-2. `OPENAI_API_KEY` environment variable
+2. Provider env var (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`)
 3. System keychain (if configured)
 4. Config file at `~/.megabuff/config.json`
 
 ## Configuration Commands
 
 ```bash
-# Save your API key
+# Save your OpenAI key (default provider)
 megabuff config set sk-your-api-key-here
+
+# Save your Anthropic key
+megabuff config set --provider anthropic sk-ant-your-api-key-here
 
 # Save to keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service)
 megabuff config set sk-your-api-key-here --keychain
@@ -105,8 +137,11 @@ megabuff config set sk-your-api-key-here --keychain
 # Show current configuration
 megabuff config show
 
-# Remove saved API key
+# Remove a saved key (defaults to openai if --provider is omitted)
 megabuff config remove
+
+# Remove a saved Anthropic key
+megabuff config remove --provider anthropic
 ```
 
 ## Development
@@ -243,6 +278,9 @@ megabuff optimize --file prompt.txt --output result.txt --no-copy
 
 # Use specific API key
 megabuff optimize "Your prompt" --api-key sk-your-key-here
+
+# Use Anthropic (Claude)
+megabuff optimize --provider anthropic "Rewrite this prompt to be clearer"
 ```
 
 ## How It Works
