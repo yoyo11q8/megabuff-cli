@@ -5,9 +5,29 @@ import * as readline from "readline/promises";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import * as clipboardy from "clipboardy";
-import { getApiKey, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, normalizeProvider, PROVIDERS, type Provider } from "./config.js";
+import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, normalizeProvider, PROVIDERS, type Provider } from "./config.js";
 
 const program = new Command();
+
+function isDevMode(): boolean {
+    // `npm run dev` sets npm_lifecycle_event=dev
+    if (process.env.npm_lifecycle_event === "dev") return true;
+    if (process.env.NODE_ENV === "development") return true;
+    if (process.env.MEGABUFF_DEBUG === "1" || process.env.MEGABUFF_DEBUG === "true") return true;
+    return false;
+}
+
+function debugLog(...args: unknown[]) {
+    if (!isDevMode()) return;
+    // stderr to avoid polluting stdout output/pipes
+    console.error("[megabuff:debug]", ...args);
+}
+
+function maskSecret(secret: string | undefined): string {
+    if (!secret) return "<none>";
+    if (secret.length <= 10) return "<redacted>";
+    return `${secret.slice(0, 3)}…${secret.slice(-2)}`;
+}
 
 program
     .name("megabuff")
@@ -24,12 +44,14 @@ program
 async function getInput(inlinePrompt: string | undefined, options: { file?: string }): Promise<string> {
     // Priority 1: Inline argument
     if (inlinePrompt) {
+        debugLog("input.source=inline", { length: inlinePrompt.length });
         return inlinePrompt;
     }
 
     // Priority 2: File input
     if (options.file) {
         try {
+            debugLog("input.source=file", { path: options.file });
             return await fs.readFile(options.file, "utf-8");
         } catch (error) {
             throw new Error(`Failed to read file: ${options.file}`);
@@ -38,6 +60,7 @@ async function getInput(inlinePrompt: string | undefined, options: { file?: stri
 
     // Priority 3: Check if stdin is piped
     if (!process.stdin.isTTY) {
+        debugLog("input.source=stdin");
         const chunks: Buffer[] = [];
         for await (const chunk of process.stdin) {
             chunks.push(chunk);
@@ -51,6 +74,7 @@ async function getInput(inlinePrompt: string | undefined, options: { file?: stri
         output: process.stdout,
     });
 
+    debugLog("input.source=interactive");
     console.log("Enter your prompt (press Ctrl+D when done):");
     const lines: string[] = [];
 
@@ -84,6 +108,7 @@ When given a prompt, you should:
 Return ONLY the optimized prompt, without explanations or meta-commentary.`;
 
     try {
+        debugLog("openai.request.start", { model: "gpt-4o-mini", promptLength: prompt.length });
         const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
@@ -93,6 +118,7 @@ Return ONLY the optimized prompt, without explanations or meta-commentary.`;
             temperature: 0.7,
         });
 
+        debugLog("openai.request.done", { choices: response.choices?.length });
         return response.choices[0]?.message?.content || "Error: No response from OpenAI";
     } catch (error) {
         if (error instanceof Error) {
@@ -120,6 +146,7 @@ When given a prompt, you should:
 Return ONLY the optimized prompt without explanations or meta-commentary.`;
 
     try {
+        debugLog("anthropic.request.start", { model: "claude-sonnet-4-5-20250929", promptLength: prompt.length });
         const response = await anthropic.messages.create({
             model: "claude-sonnet-4-5-20250929",
             max_tokens: 4096,
@@ -132,6 +159,7 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
             ]
         });
 
+        debugLog("anthropic.request.done", { contentItems: response.content?.length });
         const content = response.content?.[0];
         if (content?.type === "text") {
             return content.text;
@@ -374,6 +402,11 @@ program
     .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
     .action(async (inlinePrompt, options) => {
         try {
+            debugLog("optimize.invoked", {
+                argv: process.argv.slice(2),
+                tty: { stdin: !!process.stdin.isTTY, stdout: !!process.stdout.isTTY, stderr: !!process.stderr.isTTY },
+                options: { file: options.file, output: options.output, interactive: !!options.interactive, copy: options.copy !== false, provider: options.provider, hasApiKeyFlag: !!options.apiKey }
+            });
             const original = await getInput(inlinePrompt, options);
 
             if (!original.trim()) {
@@ -382,16 +415,21 @@ program
             }
 
             let provider = await getProvider(options.provider);
+            debugLog("provider.selected", { provider });
 
             // Get API key with priority: CLI flag > env var > keychain > config file
-            let apiKey = await getApiKey(provider, options.apiKey);
+            let { apiKey, source } = await getApiKeyInfo(provider, options.apiKey);
+            debugLog("token.resolved", { provider, source, token: maskSecret(apiKey) });
 
             // Interactive first-run setup (TTY only)
             if (!apiKey && process.stdin.isTTY && process.stdout.isTTY) {
+                debugLog("token.missing.firstRunPrompt.start");
                 const firstRun = await promptFirstRunConfig();
+                debugLog("token.missing.firstRunPrompt.done", { provider: firstRun.provider, useKeychain: firstRun.useKeychain, token: maskSecret(firstRun.apiKey) });
                 await setApiKey(firstRun.provider, firstRun.apiKey, firstRun.useKeychain);
                 provider = firstRun.provider;
-                apiKey = await getApiKey(provider);
+                ({ apiKey, source } = await getApiKeyInfo(provider));
+                debugLog("token.resolved.afterFirstRun", { provider, source, token: maskSecret(apiKey) });
             }
 
             if (!apiKey) {
@@ -407,6 +445,7 @@ program
             spinner.start();
 
             let optimized: string;
+            const t0 = Date.now();
             try {
                 if (provider === "openai") {
                     optimized = await optimizePromptOpenAI(original, apiKey);
@@ -418,8 +457,10 @@ program
                         `Supported providers: openai, anthropic`
                     );
                 }
+                debugLog("optimize.done", { provider, ms: Date.now() - t0, optimizedLength: optimized.length });
                 spinner.stop(`✓ Optimized with ${formatProviderName(provider)}`);
             } catch (e) {
+                debugLog("optimize.error", { provider, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e) });
                 spinner.fail(`✗ Optimization failed (${formatProviderName(provider)})`);
                 throw e;
             }

@@ -166,6 +166,45 @@ export async function getApiKey(provider: Provider, cliKey?: string): Promise<st
     return undefined;
 }
 
+export type ApiKeySource = "cli" | "env" | "keychain" | "config" | "none";
+
+/**
+ * Same as getApiKey(), but also returns where the key came from (for debugging).
+ * Never log the raw key value.
+ */
+export async function getApiKeyInfo(
+    provider: Provider,
+    cliKey?: string
+): Promise<{ apiKey?: string; source: ApiKeySource }> {
+    // Priority 1: CLI flag
+    if (cliKey) {
+        return { apiKey: cliKey, source: "cli" };
+    }
+
+    // Priority 2: Environment variable
+    if (provider === "openai" && process.env.OPENAI_API_KEY) return { apiKey: process.env.OPENAI_API_KEY, source: "env" };
+    if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) return { apiKey: process.env.ANTHROPIC_API_KEY, source: "env" };
+    if (provider === "google" && process.env.GOOGLE_API_KEY) return { apiKey: process.env.GOOGLE_API_KEY, source: "env" };
+    if (provider === "azure-openai" && process.env.AZURE_OPENAI_API_KEY) return { apiKey: process.env.AZURE_OPENAI_API_KEY, source: "env" };
+
+    const config = await readConfig();
+
+    // Priority 3: Keychain
+    if (config.useKeychain) {
+        const keychainKey = await getKeychainKey(provider);
+        if (keychainKey) {
+            return { apiKey: keychainKey, source: "keychain" };
+        }
+    }
+
+    // Priority 4: Config file
+    const providerKey = config.apiKeys?.[provider];
+    if (providerKey) return { apiKey: providerKey, source: "config" };
+    if (provider === "openai" && config.apiKey) return { apiKey: config.apiKey, source: "config" };
+
+    return { source: "none" };
+}
+
 /**
  * Set API key in config or keychain
  */
