@@ -124,16 +124,118 @@ npm publish
 ### Updates
 
 ```bash
-# 1. Update version (this also creates a git tag)
-npm version patch   # for bug fixes
-npm version minor   # for new features
-npm version major   # for breaking changes
+# 1. Make and commit your changes
+git add .
+git commit -m "Add feature X"
 
-# 2. Publish
+# 2. Update version (choose one based on change type)
+npm version patch   # Bug fixes: 0.1.0 → 0.1.1
+npm version minor   # New features: 0.1.0 → 0.2.0
+npm version major   # Breaking changes: 0.1.0 → 1.0.0
+
+# 3. Publish
 npm publish
 
-# 3. Push to GitHub
+# 4. Push to GitHub (including tags)
 git push && git push --tags
+```
+
+## Version Management Guide
+
+### Semantic Versioning (MAJOR.MINOR.PATCH)
+
+Use `npm version` to automatically update package.json, create a git commit, and create a git tag.
+
+#### `npm version patch` - Bug Fixes
+**Example: 0.1.0 → 0.1.1**
+
+Use for:
+- Bug fixes
+- Documentation updates
+- Minor tweaks
+- Performance improvements
+- No new features
+
+```bash
+npm version patch
+# Updates: 0.1.0 → 0.1.1
+# Creates: git commit + tag v0.1.1
+```
+
+#### `npm version minor` - New Features
+**Example: 0.1.0 → 0.2.0**
+
+Use for:
+- New features
+- New commands or options
+- Enhancements
+- Backwards compatible changes
+- Most common for updates
+
+```bash
+npm version minor
+# Updates: 0.1.1 → 0.2.0
+# Creates: git commit + tag v0.2.0
+```
+
+#### `npm version major` - Breaking Changes
+**Example: 0.2.0 → 1.0.0**
+
+Use for:
+- Breaking changes
+- API changes that aren't backwards compatible
+- Removed features
+- Major rewrites
+- When ready for v1.0!
+
+```bash
+npm version major
+# Updates: 0.2.0 → 1.0.0
+# Creates: git commit + tag v1.0.0
+```
+
+### What `npm version` Does Automatically
+
+1. ✅ Updates `version` field in package.json
+2. ✅ Creates a git commit with the new version as message
+3. ✅ Creates a git tag (e.g., "v0.1.1")
+4. ✅ Runs `prepublishOnly` script when you publish
+
+### Example Scenarios
+
+```bash
+# Fixed clipboard bug
+npm version patch
+npm publish
+git push && git push --tags
+# Result: 0.1.0 → 0.1.1
+
+# Added new --format option
+npm version minor
+npm publish
+git push && git push --tags
+# Result: 0.1.1 → 0.2.0
+
+# Changed config file structure (breaking)
+npm version major
+npm publish
+git push && git push --tags
+# Result: 0.2.0 → 1.0.0
+```
+
+### Pre-release Versions (Advanced)
+
+For beta or release candidate versions:
+
+```bash
+# Create beta release: 0.1.0 → 0.1.1-beta.0
+npm version prerelease --preid=beta
+
+# Create release candidate: 0.1.0 → 0.1.1-rc.0
+npm version prerelease --preid=rc
+
+# Publish with beta tag (not latest)
+npm publish --tag beta
 ```
 
 ## After Publishing
