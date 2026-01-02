@@ -1,6 +1,6 @@
 # MegaBuff
 
-AI-powered prompt optimizer CLI with multi-provider support (OpenAI & Anthropic). Improve your prompts with BYOK (Bring Your Own Key) and flexible input/output options.
+AI-powered prompt optimizer CLI with multi-provider support (OpenAI, Anthropic & Google Gemini). Improve your prompts with BYOK (Bring Your Own Key) and flexible input/output options.
 
 ## Table of Contents
 
@@ -114,6 +114,29 @@ MegaBuff can also use **Anthropic (Claude)** if you provide your own Anthropic A
    - Copy and store it somewhere secure
    - Anthropic keys typically start with `sk-ant-`
 
+### Getting Your Google Gemini API Key (BYOK)
+
+MegaBuff also supports **Google Gemini** with your own API key.
+
+**Steps to get your Google Gemini API Key:**
+
+1. **Go to Google AI Studio**
+   - Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
+   - Sign in with your Google account
+
+2. **Create an API key**
+   - Click **Get API Key** or **Create API Key**
+   - Choose an existing Google Cloud project or create a new one
+   - Your API key will be generated
+
+3. **Save your key immediately**
+   - Copy and store it securely
+   - You'll need this key to use Gemini models
+
+4. **Enable billing (if needed)**
+   - Free tier is available for testing
+   - For production usage, you may need to enable billing in Google Cloud Console
+
 ### Configuring Your API Key
 
 Once you have your provider API key, configure it using one of these methods:
@@ -128,11 +151,12 @@ megabuff config
 
 # Then choose:
 # 1) Set API token for a provider
-# Pick OpenAI or Anthropic, paste your key, choose storage method
+# Pick OpenAI, Anthropic, or Google, paste your key, choose storage method
 
 # Or use the direct token command
 megabuff config token sk-your-api-key-here --provider openai
 megabuff config token sk-ant-your-key --provider anthropic --keychain
+megabuff config token your-google-key --provider google
 ```
 
 This saves your key for future use. You only need to do this once!
@@ -146,6 +170,7 @@ This saves your key for future use. You only need to do this once!
 ```bash
 export OPENAI_API_KEY="sk-your-api-key-here"
 export ANTHROPIC_API_KEY="sk-ant-your-api-key-here"
+export GOOGLE_API_KEY="your-google-api-key-here"
 ```
 
 Add to your shell profile (`.bashrc`, `.zshrc`, etc.) to persist across sessions.
@@ -155,6 +180,7 @@ Add to your shell profile (`.bashrc`, `.zshrc`, etc.) to persist across sessions
 ```bash
 megabuff optimize "your prompt" --api-key sk-your-key-here
 megabuff optimize --provider anthropic "your prompt" --api-key sk-ant-your-key-here
+megabuff optimize --provider google "your prompt" --api-key your-google-key-here
 ```
 
 ### API Key Priority
@@ -202,6 +228,7 @@ megabuff config provider  # show current provider
 # Set model (automatically sets provider)
 megabuff config model claude-sonnet-4-5  # sets provider to anthropic
 megabuff config model gpt-4o             # sets provider to openai
+megabuff config model gemini-1.5-pro     # sets provider to google
 megabuff config model                     # show current model
 
 # Show all configuration
@@ -228,6 +255,12 @@ megabuff config remove --provider anthropic
 - `claude-3-opus-20240229`
 - `claude-3-sonnet-20240229`
 - `claude-3-haiku-20240307`
+
+**Google Gemini:**
+- `gemini-2.0-flash-exp` (experimental)
+- `gemini-1.5-pro`
+- `gemini-1.5-flash` (default for Google)
+- `gemini-1.0-pro`
 
 ## Development
 
@@ -352,6 +385,9 @@ megabuff optimize "Write code for user auth"
 # Use Anthropic (Claude) instead
 megabuff optimize --provider anthropic "Write code for user auth"
 
+# Use Google Gemini
+megabuff optimize --provider google "Write code for user auth"
+
 # From file with interactive view (auto-copies)
 megabuff optimize --file my-prompt.txt --interactive
 
@@ -374,6 +410,10 @@ megabuff optimize "Rewrite this prompt to be clearer"
 # Set a specific model (auto-sets provider)
 megabuff config model claude-sonnet-4-5
 megabuff optimize "Explain quantum computing"
+
+# Or use Gemini model
+megabuff config model gemini-1.5-pro
+megabuff optimize "Explain quantum computing"
 ```
 
 ## How It Works
@@ -383,6 +423,7 @@ MegaBuff supports multiple AI providers to optimize your prompts:
 **Providers:**
 - **OpenAI** (default): Uses GPT-4o-mini for fast, cost-effective optimization
 - **Anthropic**: Uses Claude Sonnet 4.5 for advanced reasoning and optimization
+- **Google Gemini**: Uses Gemini 1.5 Flash for efficient, high-quality optimization
 
 The optimization process:
 1. Identifies ambiguities or unclear instructions
@@ -485,6 +526,7 @@ Want a feature or want to contribute one? Please open an issue here:
 
 2. **Build the project**:
    ```bash
+   npm version minor 
    npm run build
    ```
    This compiles TypeScript to JavaScript in the `dist/` folder

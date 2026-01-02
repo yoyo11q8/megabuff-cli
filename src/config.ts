@@ -29,6 +29,11 @@ export const MODEL_PROVIDER_MAP: Record<string, Provider> = {
     "claude-3-opus-20240229": "anthropic",
     "claude-3-sonnet-20240229": "anthropic",
     "claude-3-haiku-20240307": "anthropic",
+    // Google Gemini models
+    "gemini-2.0-flash-exp": "google",
+    "gemini-1.5-pro": "google",
+    "gemini-1.5-flash": "google",
+    "gemini-1.0-pro": "google",
 };
 
 export function getProviderForModel(model: string): Provider | undefined {

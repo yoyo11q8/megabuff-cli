@@ -1,7 +1,7 @@
 {
   "name": "megabuff",
   "version": "0.5.0",
-  "description": "AI-powered prompt optimizer CLI with BYOK (Bring Your Own Key) support for OpenAI and Anthropic",
+  "description": "AI-powered prompt optimizer CLI with BYOK (Bring Your Own Key) support for OpenAI, Anthropic, and Google Gemini",
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
@@ -16,6 +16,8 @@
     "optimizer",
     "openai",
     "anthropic",
+    "google",
+    "gemini",
     "claude",
     "cli",
     "chatgpt",
@@ -36,6 +38,7 @@
   "homepage": "https://github.com/thesupermegabuff/megabuff-cli#readme",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@google/generative-ai": "^0.21.0",
     "commander": "^14.0.2",
     "openai": "^4.77.3",
     "keytar": "^7.9.0",

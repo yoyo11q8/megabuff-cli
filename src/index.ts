@@ -4,6 +4,7 @@ import * as fs from "fs/promises";
 import * as readline from "readline/promises";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as clipboardy from "clipboardy";
 import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, setProvider, setModel, getModel, normalizeProvider, getProviderForModel, MODEL_PROVIDER_MAP, PROVIDERS, type Provider } from "./config.js";
 
@@ -174,6 +175,49 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
     }
 }
 
+/**
+ * Optimize a prompt using Google Gemini
+ */
+async function optimizePromptGemini(prompt: string, apiKey: string): Promise<string> {
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
+
+When given a prompt, you should:
+1. Identify ambiguities or unclear instructions
+2. Add relevant context that would improve results
+3. Structure the prompt for better clarity
+4. Ensure the prompt follows best practices
+5. Make it more specific and actionable
+
+Return ONLY the optimized prompt without explanations or meta-commentary.`;
+
+    try {
+        debugLog("gemini.request.start", { model: "gemini-1.5-flash", promptLength: prompt.length });
+        const model = genAI.getGenerativeModel({
+            model: "gemini-1.5-flash",
+            systemInstruction: systemPrompt
+        });
+
+        const result = await model.generateContent(`Optimize this prompt:\n\n${prompt}`);
+        const response = result.response;
+        const text = response.text();
+
+        debugLog("gemini.request.done", { responseLength: text.length });
+
+        if (!text) {
+            throw new Error("No response from Gemini API");
+        }
+
+        return text;
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`Gemini API error: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
 function formatProviderName(provider: Provider): string {
     if (provider === "openai") return "OpenAI";
     if (provider === "anthropic") return "Anthropic";
@@ -226,7 +270,7 @@ function createSpinner(message: string) {
 function formatProviderLabel(p: Provider): string {
     if (p === "openai") return "OpenAI";
     if (p === "anthropic") return "Anthropic";
-    if (p === "google") return "Google Gemini (coming soon)";
+    if (p === "google") return "Google Gemini";
     if (p === "azure-openai") return "Azure OpenAI (coming soon)";
     return p;
 }
@@ -716,10 +760,12 @@ program
                     optimized = await optimizePromptOpenAI(original, apiKey);
                 } else if (provider === "anthropic") {
                     optimized = await optimizePromptAnthropic(original, apiKey);
+                } else if (provider === "google") {
+                    optimized = await optimizePromptGemini(original, apiKey);
                 } else {
                     throw new Error(
                         `Provider '${provider}' is not supported yet in optimize. ` +
-                        `Supported providers: openai, anthropic`
+                        `Supported providers: openai, anthropic, google`
                     );
                 }
                 debugLog("optimize.done", { provider, ms: Date.now() - t0, optimizedLength: optimized.length });
