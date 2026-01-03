@@ -5,7 +5,7 @@
 
 **Transform your AI prompts from good to great!** ✨
 
-AI-powered prompt optimizer with multi-provider support (OpenAI, Anthropic & Google Gemini)
+AI-powered prompt optimizer with multi-provider support (OpenAI, Anthropic, Gemini, DeepSeek, xAI & more)
 
 🔑 BYOK (Bring Your Own Key) • 🎨 16 Beautiful Themes • ⚡ Lightning Fast
 
