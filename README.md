@@ -1,12 +1,24 @@
-# 🚀 MegaBuff
+# 🤖 MegaBuff
 
 <div align="center">
+
+<img src="github-media-banner.png" alt="MegaBuff Banner" width="100%">
+
+<br/>
+<br/>
 
 **Transform your AI prompts from good to great!** ✨
 
 AI-powered prompt optimizer with multi-provider support (OpenAI, Anthropic & Google Gemini)
 
 🔑 BYOK (Bring Your Own Key) • 🎨 16 Beautiful Themes • ⚡ Lightning Fast
+
+[![npm version](https://img.shields.io/npm/v/megabuff.svg?style=flat-square)](https://www.npmjs.com/package/megabuff)
+[![npm downloads](https://img.shields.io/npm/dm/megabuff.svg?style=flat-square)](https://www.npmjs.com/package/megabuff)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg?style=flat-square)](https://opensource.org/licenses/AGPL-3.0)
+[![GitHub stars](https://img.shields.io/github/stars/thesupermegabuff/megabuff-cli.svg?style=flat-square)](https://github.com/thesupermegabuff/megabuff-cli/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/thesupermegabuff/megabuff-cli.svg?style=flat-square)](https://github.com/thesupermegabuff/megabuff-cli/issues)
+[![Node.js Version](https://img.shields.io/node/v/megabuff.svg?style=flat-square)](https://nodejs.org)
 
 </div>
 
@@ -27,7 +39,7 @@ megabuff optimize "Rewrite this prompt to be clearer"
 
 ## ✨ Features
 
-- 🤖 **Multi-Provider Support** - OpenAI, Anthropic Claude, Google Gemini
+- 🤖 **Multi-Provider Support** - OpenAI, Anthropic Claude, Google Gemini, & more
 - 🔑 **BYOK Model** - Bring your own API key, full control
 - 🎨 **16 Beautiful Themes** - Customize your CLI experience
 - ⚡ **Lightning Fast** - Optimize prompts in seconds
