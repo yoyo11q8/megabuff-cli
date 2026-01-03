@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as clipboardy from "clipboardy";
 import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, setProvider, setModel, getModel, normalizeProvider, getProviderForModel, MODEL_PROVIDER_MAP, PROVIDERS, type Provider } from "./config.js";
+import { getDefaultModel } from "./models.js";
 
 const program = new Command();
 
@@ -93,9 +94,9 @@ async function getInput(inlinePrompt: string | undefined, options: { file?: stri
 /**
  * Optimize a prompt using OpenAI
  */
-async function optimizePromptOpenAI(prompt: string, apiKey: string): Promise<string> {
-
+async function optimizePromptOpenAI(prompt: string, apiKey: string, model?: string): Promise<string> {
     const openai = new OpenAI({ apiKey });
+    const selectedModel = model ?? getDefaultModel("openai");
 
     const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
 
@@ -109,9 +110,9 @@ When given a prompt, you should:
 Return ONLY the optimized prompt, without explanations or meta-commentary.`;
 
     try {
-        debugLog("openai.request.start", { model: "gpt-4o-mini", promptLength: prompt.length });
+        debugLog("openai.request.start", { model: selectedModel, promptLength: prompt.length });
         const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: selectedModel,
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: `Optimize this prompt:\n\n${prompt}` }
@@ -132,8 +133,9 @@ Return ONLY the optimized prompt, without explanations or meta-commentary.`;
 /**
  * Optimize a prompt using Anthropic Claude
  */
-async function optimizePromptAnthropic(prompt: string, apiKey: string): Promise<string> {
+async function optimizePromptAnthropic(prompt: string, apiKey: string, model?: string): Promise<string> {
     const anthropic = new Anthropic({ apiKey });
+    const selectedModel = model ?? getDefaultModel("anthropic");
 
     const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
 
@@ -147,9 +149,9 @@ When given a prompt, you should:
 Return ONLY the optimized prompt without explanations or meta-commentary.`;
 
     try {
-        debugLog("anthropic.request.start", { model: "claude-sonnet-4-5-20250929", promptLength: prompt.length });
+        debugLog("anthropic.request.start", { model: selectedModel, promptLength: prompt.length });
         const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-5-20250929",
+            model: selectedModel,
             max_tokens: 4096,
             system: systemPrompt,
             messages: [
@@ -178,8 +180,9 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
 /**
  * Optimize a prompt using Google Gemini
  */
-async function optimizePromptGemini(prompt: string, apiKey: string): Promise<string> {
+async function optimizePromptGemini(prompt: string, apiKey: string, modelName?: string): Promise<string> {
     const genAI = new GoogleGenerativeAI(apiKey);
+    const selectedModel = modelName ?? getDefaultModel("google");
 
     const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
 
@@ -193,9 +196,9 @@ When given a prompt, you should:
 Return ONLY the optimized prompt without explanations or meta-commentary.`;
 
     try {
-        debugLog("gemini.request.start", { model: "gemini-1.5-flash", promptLength: prompt.length });
+        debugLog("gemini.request.start", { model: selectedModel, promptLength: prompt.length });
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash",
+            model: selectedModel,
             systemInstruction: systemPrompt
         });
 
@@ -496,6 +499,7 @@ async function interactiveConfig(): Promise<void> {
                 const config = await getConfig();
                 const currentProvider = await getProvider();
                 const currentModel = await getModel();
+                const effectiveModel = currentModel ?? getDefaultModel(currentProvider);
                 const providerStatuses = await Promise.all(
                     PROVIDERS.map(async (p) => [p, await hasApiKey(p)] as const)
                 );
@@ -504,7 +508,7 @@ async function interactiveConfig(): Promise<void> {
                 console.log("│      Current Configuration          │");
                 console.log("╰─────────────────────────────────────╯\n");
                 console.log(`Provider: ${currentProvider}`);
-                console.log(`Model: ${currentModel || "(default for provider)"}`);
+                console.log(`Model: ${currentModel ? effectiveModel : `${effectiveModel} (default for provider)`}`);
                 console.log(`Storage: ${config.useKeychain ? "System Keychain" : "Config File"}`);
                 console.log("\nAPI Tokens:");
                 for (const [p, ok] of providerStatuses) {
@@ -628,7 +632,8 @@ configCmd
             if (!modelArg) {
                 const m = await getModel();
                 const p = await getProvider();
-                console.log(`Current model: ${m || "(default for provider)"}`);
+                const effectiveModel = m ?? getDefaultModel(p);
+                console.log(`Current model: ${m ? effectiveModel : `${effectiveModel} (default for provider)`}`);
                 console.log(`Current provider: ${p}`);
                 return;
             }
@@ -664,13 +669,14 @@ configCmd
             const config = await getConfig();
             const selectedProvider = await getProvider();
             const selectedModel = await getModel();
+            const effectiveModel = selectedModel ?? getDefaultModel(selectedProvider);
             const providerStatuses = await Promise.all(
                 PROVIDERS.map(async (p) => [p, await hasApiKey(p)] as const)
             );
 
             console.log("Current configuration:");
             console.log(`  Provider: ${selectedProvider}`);
-            console.log(`  Model: ${selectedModel || "(default for provider)"}`);
+            console.log(`  Model: ${selectedModel ? effectiveModel : `${effectiveModel} (default for provider)`}`);
             console.log(`  Storage: ${config.useKeychain ? "System Keychain" : "Config File"}`);
             console.log("\nAPI Tokens:");
             for (const [p, ok] of providerStatuses) {
@@ -749,19 +755,24 @@ program
                 );
             }
 
+            // Get the configured model (if any) for this provider
+            const configuredModel = await getModel();
+            const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+            debugLog("model.selected", { configuredModel, modelToUse, provider });
+
             // Route to the appropriate provider's optimization function
-            const spinner = createSpinner(`Optimizing with ${formatProviderName(provider)}...`);
+            const spinner = createSpinner(`Optimizing with ${formatProviderName(provider)}${modelToUse ? ` (${modelToUse})` : ""}...`);
             spinner.start();
 
             let optimized: string;
             const t0 = Date.now();
             try {
                 if (provider === "openai") {
-                    optimized = await optimizePromptOpenAI(original, apiKey);
+                    optimized = await optimizePromptOpenAI(original, apiKey, modelToUse);
                 } else if (provider === "anthropic") {
-                    optimized = await optimizePromptAnthropic(original, apiKey);
+                    optimized = await optimizePromptAnthropic(original, apiKey, modelToUse);
                 } else if (provider === "google") {
-                    optimized = await optimizePromptGemini(original, apiKey);
+                    optimized = await optimizePromptGemini(original, apiKey, modelToUse);
                 } else {
                     throw new Error(
                         `Provider '${provider}' is not supported yet in optimize. ` +

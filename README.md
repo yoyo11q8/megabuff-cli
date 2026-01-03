@@ -2,6 +2,15 @@
 
 AI-powered prompt optimizer CLI with multi-provider support (OpenAI, Anthropic & Google Gemini). Improve your prompts with BYOK (Bring Your Own Key) and flexible input/output options.
 
+## Installation
+
+Install MegaBuff globally:
+
+```bash
+npm install -g megabuff
+megabuff optimize "Rewrite this prompt to be clearer"
+```
+
 ## Table of Contents
 
 - [Installation](#installation)
@@ -42,22 +51,13 @@ AI-powered prompt optimizer CLI with multi-provider support (OpenAI, Anthropic &
   - [What Gets Published](#what-gets-published)
   - [After Publishing](#after-publishing)
 
-## Installation
-
-Install MegaBuff globally:
-
-```bash
-npm install -g megabuff
-```
-
-Or for development:
+Local installation:
 
 ```bash
 git clone https://github.com/thesupermegabuff/megabuff-cli.git
 cd megabuff-cli
+nvm use 22
 npm install
-
-# Originally used nvm use 22
 ```
 
 ## Setup
