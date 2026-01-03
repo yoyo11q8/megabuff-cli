@@ -1,11 +1,7 @@
-# 🤖 MegaBuff
-
+<h1 align="center">
+🤖 MegaBuff
+</h1>
 <div align="center">
-
-<img src="github-media-banner.png" alt="MegaBuff Banner" width="100%">
-
-<br/>
-<br/>
 
 **Transform your AI prompts from good to great!** ✨
 
@@ -20,6 +16,10 @@ AI-powered prompt optimizer with multi-provider support (OpenAI, Anthropic & Goo
 [![GitHub issues](https://img.shields.io/github/issues/thesupermegabuff/megabuff-cli.svg?style=flat-square)](https://github.com/thesupermegabuff/megabuff-cli/issues)
 [![Node.js Version](https://img.shields.io/node/v/megabuff.svg?style=flat-square)](https://nodejs.org)
 
+<img width="690" src="media/github-media-banner.png" alt="MegaBuff Banner" width="100%">
+
+<br/>
+<br/>
 </div>
 
 ---
