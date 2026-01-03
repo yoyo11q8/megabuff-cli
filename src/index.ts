@@ -346,13 +346,27 @@ async function outputResult(
     optimized: string,
     options: { output?: string; interactive?: boolean; copy?: boolean }
 ): Promise<void> {
+    // Calculate statistics
+    const originalWords = original.trim().split(/\s+/).length;
+    const optimizedWords = optimized.trim().split(/\s+/).length;
+    const wordDiff = optimizedWords - originalWords;
+    const wordDiffPercent = originalWords > 0 ? ((wordDiff / originalWords) * 100).toFixed(1) : "0";
+    const wordDiffSign = wordDiff > 0 ? "+" : "";
+
     // Copy to clipboard by default (unless --no-copy is used)
     if (options.copy !== false) {
         try {
             await clipboardy.default.write(optimized);
-            console.error(theme.colors.success("✓ Copied to clipboard") + theme.colors.dim(" — press Ctrl+V (or Paste) to use the optimized prompt"));
             console.error("");
-            console.error(theme.colors.dim("─".repeat(50)));
+            console.error(theme.colors.primary("╭─────────────────────────────────────────────────╮"));
+            console.error(theme.colors.primary("│") + theme.colors.success("  ✓ Copied to clipboard!                       ") + theme.colors.primary("│"));
+            console.error(theme.colors.primary("╰─────────────────────────────────────────────────╯"));
+            console.error(theme.colors.dim("  Press ") + theme.colors.accent("Ctrl+V") + theme.colors.dim(" to paste your optimized prompt"));
+            console.error("");
+            console.error(theme.colors.dim("  📊 Stats: ") + theme.colors.info(`${originalWords} → ${optimizedWords} words `) +
+                theme.colors.dim("(") + (wordDiff > 0 ? theme.colors.warning : theme.colors.success)(`${wordDiffSign}${wordDiffPercent}%`) + theme.colors.dim(")"));
+            console.error("");
+            console.error(theme.colors.primary("─".repeat(50)));
             console.error("");
         } catch (error) {
             const errMsg = error instanceof Error ? error.message : String(error);
@@ -363,7 +377,10 @@ async function outputResult(
     // If output file specified, write to file
     if (options.output) {
         await fs.writeFile(options.output, optimized, "utf-8");
+        console.error("");
         console.error(theme.colors.success(`✓ Optimized prompt saved to: `) + theme.colors.highlight(options.output));
+        console.error(theme.colors.dim(`  ${optimizedWords} words • ${optimized.length} characters`));
+        console.error("");
         // Still print to stdout for piping
         if (!options.interactive) {
             console.log(optimized);
@@ -373,20 +390,70 @@ async function outputResult(
 
     // If interactive mode, show comparison
     if (options.interactive) {
-        console.log("\n" + theme.colors.primary("━".repeat(60)));
-        console.log(theme.colors.warning("📝 ORIGINAL PROMPT:"));
-        console.log(theme.colors.primary("━".repeat(60)));
-        console.log(theme.colors.secondary(original));
-        console.log("\n" + theme.colors.success("━".repeat(60)));
-        console.log(theme.colors.success("✨ OPTIMIZED PROMPT:"));
-        console.log(theme.colors.success("━".repeat(60)));
-        console.log(theme.colors.secondary(optimized));
-        console.log(theme.colors.success("━".repeat(60)) + "\n");
+        const termWidth = process.stdout.columns || 80;
+        const boxWidth = Math.min(termWidth - 4, 100);
+
+        console.log("");
+        console.log(theme.colors.primary("╭" + "─".repeat(boxWidth - 2) + "╮"));
+        console.log(theme.colors.primary("│") + theme.colors.highlight(" 📝 ORIGINAL PROMPT ".padEnd(boxWidth - 2)) + theme.colors.primary("│"));
+        console.log(theme.colors.primary("╰" + "─".repeat(boxWidth - 2) + "╯"));
+        console.log("");
+
+        // Word wrap the original prompt
+        const originalLines = wrapText(original, boxWidth - 4);
+        originalLines.forEach(line => {
+            console.log(theme.colors.dim("  ") + theme.colors.secondary(line));
+        });
+
+        console.log("");
+        console.log(theme.colors.dim("  📊 ") + theme.colors.info(`${originalWords} words`) + theme.colors.dim(" • ") + theme.colors.info(`${original.length} chars`));
+        console.log("");
+
+        console.log(theme.colors.success("╭" + "─".repeat(boxWidth - 2) + "╮"));
+        console.log(theme.colors.success("│") + theme.colors.highlight(" ✨ OPTIMIZED PROMPT ".padEnd(boxWidth - 2)) + theme.colors.success("│"));
+        console.log(theme.colors.success("╰" + "─".repeat(boxWidth - 2) + "╯"));
+        console.log("");
+
+        // Word wrap the optimized prompt
+        const optimizedLines = wrapText(optimized, boxWidth - 4);
+        optimizedLines.forEach(line => {
+            console.log(theme.colors.dim("  ") + theme.colors.primary(line));
+        });
+
+        console.log("");
+        console.log(theme.colors.dim("  📊 ") + theme.colors.info(`${optimizedWords} words`) + theme.colors.dim(" • ") + theme.colors.info(`${optimized.length} chars`) +
+            theme.colors.dim(" • ") + (wordDiff > 0 ? theme.colors.warning : theme.colors.success)(`${wordDiffSign}${wordDiff} words (${wordDiffSign}${wordDiffPercent}%)`));
+        console.log("");
+
         return;
     }
 
     // Default: print to stdout (pipeable)
     console.log(optimized);
+    console.error("");
+    console.error(theme.colors.primary("─".repeat(50)));
+    console.error("");
+}
+
+/**
+ * Simple word wrap utility
+ */
+function wrapText(text: string, maxWidth: number): string[] {
+    const words = text.split(/\s+/);
+    const lines: string[] = [];
+    let currentLine = "";
+
+    for (const word of words) {
+        if (currentLine.length + word.length + 1 <= maxWidth) {
+            currentLine += (currentLine ? " " : "") + word;
+        } else {
+            if (currentLine) lines.push(currentLine);
+            currentLine = word;
+        }
+    }
+    if (currentLine) lines.push(currentLine);
+
+    return lines;
 }
 
 // Helper function to get available models by provider
@@ -562,11 +629,15 @@ const configCmd = program
         if (process.stdin.isTTY && process.stdout.isTTY) {
             await interactiveConfig();
         } else {
-            console.error(theme.colors.error("Error: Interactive mode requires a TTY. Use subcommands instead:"));
-            console.error(theme.colors.info("  megabuff config token <token> --provider <provider>"));
-            console.error(theme.colors.info("  megabuff config provider <provider>"));
-            console.error(theme.colors.info("  megabuff config model <model>"));
-            console.error(theme.colors.info("  megabuff config show"));
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("Interactive mode requires a TTY"));
+            console.error("");
+            console.error(theme.colors.dim("   Use these subcommands instead:"));
+            console.error(theme.colors.accent("     megabuff config token <token> --provider <provider>"));
+            console.error(theme.colors.accent("     megabuff config provider <provider>"));
+            console.error(theme.colors.accent("     megabuff config model <model>"));
+            console.error(theme.colors.accent("     megabuff config show"));
+            console.error("");
             process.exit(1);
         }
     });
@@ -581,38 +652,55 @@ configCmd
         try {
             const provider = normalizeProvider(options.provider);
             if (!provider) {
-                console.error(theme.colors.error(`Error: Invalid provider '${options.provider}'. Valid options: ${PROVIDERS.join(", ")}`));
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Invalid provider '${options.provider}'`));
+                console.error("");
+                console.error(theme.colors.dim("   Valid providers: ") + theme.colors.info(PROVIDERS.join(", ")));
+                console.error("");
                 process.exit(1);
             }
 
             let finalToken = token;
             if (!finalToken) {
                 if (!process.stdin.isTTY) {
-                    console.error(theme.colors.error("Error: Missing token argument. Provide it inline or run in an interactive terminal."));
+                    console.error("");
+                    console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("Missing token argument"));
+                    console.error("");
+                    console.error(theme.colors.dim("   Provide it inline or run in an interactive terminal"));
+                    console.error("");
                     process.exit(1);
                 }
                 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
                 try {
-                    finalToken = (await rl.question(theme.colors.primary("Enter your API token: "))).trim();
+                    finalToken = (await rl.question(theme.colors.primary("🔑 Enter your API token: "))).trim();
                 } finally {
                     rl.close();
                 }
             }
 
             if (!finalToken) {
-                console.error(theme.colors.error("Error: No token provided"));
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("No token provided"));
+                console.error("");
                 process.exit(1);
             }
 
             await setApiKey(provider, finalToken, options.keychain || false);
+            console.error("");
             if (options.keychain) {
-                console.log(theme.colors.success(`✓ ${provider} token saved`) + theme.colors.dim(" securely in system keychain"));
+                console.log(theme.colors.success(`✓ ${formatProviderName(provider)} token saved securely! 🔐`));
+                console.log(theme.colors.dim("  Stored in system keychain for maximum security"));
             } else {
-                console.log(theme.colors.success(`✓ ${provider} token saved`) + theme.colors.dim(" to config file"));
-                console.log(theme.colors.dim("  Tip: Use --keychain flag for more secure storage"));
+                console.log(theme.colors.success(`✓ ${formatProviderName(provider)} token saved! 💾`));
+                console.log(theme.colors.dim("  Stored in ") + theme.colors.accent("~/.megabuff/config.json"));
+                console.log("");
+                console.log(theme.colors.info("  💡 Tip: ") + theme.colors.dim("Use ") + theme.colors.accent("--keychain") + theme.colors.dim(" flag for more secure storage"));
             }
+            console.error("");
         } catch (error) {
-            console.error(theme.colors.error(`Error: ${error instanceof Error ? error.message : String(error)}`));
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error("");
             process.exit(1);
         }
     });
@@ -625,20 +713,34 @@ configCmd
         try {
             if (!providerArg) {
                 const p = await getProvider();
-                console.log(theme.colors.secondary(`Default provider: `) + theme.colors.highlight(p));
+                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : "🔧";
+                console.log("");
+                console.log(theme.colors.dim("  Current default provider:"));
+                console.log(theme.colors.primary(`  ${providerEmoji} `) + theme.colors.highlight(formatProviderName(p)));
+                console.log("");
                 return;
             }
 
             const p = normalizeProvider(providerArg);
             if (!p) {
-                console.error(theme.colors.error(`Error: Invalid provider '${providerArg}'. Valid options: ${PROVIDERS.join(", ")}`));
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Invalid provider '${providerArg}'`));
+                console.error("");
+                console.error(theme.colors.dim("   Valid providers: ") + theme.colors.info(PROVIDERS.join(", ")));
+                console.error("");
                 process.exit(1);
             }
 
             await setProvider(p);
-            console.log(theme.colors.success(`✓ Default provider set to: `) + theme.colors.highlight(p));
+            const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : "🔧";
+            console.log("");
+            console.log(theme.colors.success(`✓ Default provider updated!`));
+            console.log(theme.colors.dim("  Now using: ") + theme.colors.highlight(`${providerEmoji} ${formatProviderName(p)}`));
+            console.log("");
         } catch (error) {
-            console.error(theme.colors.error(`Error: ${error instanceof Error ? error.message : String(error)}`));
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error("");
             process.exit(1);
         }
     });
@@ -653,30 +755,45 @@ configCmd
                 const m = await getModel();
                 const p = await getProvider();
                 const effectiveModel = m ?? getDefaultModel(p);
-                console.log(theme.colors.secondary(`Current model: `) + theme.colors.highlight(effectiveModel) + theme.colors.dim(m ? "" : " (default for provider)"));
-                console.log(theme.colors.secondary(`Current provider: `) + theme.colors.highlight(p));
+                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : "🔧";
+                console.log("");
+                console.log(theme.colors.dim("  Current configuration:"));
+                console.log(theme.colors.primary(`  ${providerEmoji} Model: `) + theme.colors.highlight(effectiveModel) + theme.colors.dim(m ? "" : " (default)"));
+                console.log(theme.colors.dim(`     Provider: `) + theme.colors.info(formatProviderName(p)));
+                console.log("");
                 return;
             }
 
             const provider = getProviderForModel(modelArg);
             if (!provider) {
-                console.error(theme.colors.error(`Error: Unknown model '${modelArg}'`));
-                console.error(theme.colors.warning("\nAvailable models:"));
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Unknown model '${modelArg}'`));
+                console.error("");
+                console.error(theme.colors.dim("   Available models:"));
+                console.error("");
                 PROVIDERS.forEach(p => {
                     const models = getModelsByProvider(p);
                     if (models.length > 0) {
-                        console.error(theme.colors.warning(`\n${formatProviderName(p)}:`));
-                        models.forEach(m => console.error(theme.colors.secondary(`  - ${m}`)));
+                        const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : "🔧";
+                        console.error(theme.colors.primary(`   ${providerEmoji} ${formatProviderName(p)}:`));
+                        models.forEach(m => console.error(theme.colors.dim(`      • `) + theme.colors.info(m)));
+                        console.error("");
                     }
                 });
                 process.exit(1);
             }
 
             await setModel(modelArg);
-            console.log(theme.colors.success(`✓ Model set to: `) + theme.colors.highlight(modelArg));
-            console.log(theme.colors.success(`✓ Provider auto-set to: `) + theme.colors.highlight(provider));
+            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : "🔧";
+            console.log("");
+            console.log(theme.colors.success(`✓ Configuration updated!`));
+            console.log(theme.colors.dim("  Model: ") + theme.colors.highlight(modelArg));
+            console.log(theme.colors.dim("  Provider: ") + theme.colors.highlight(`${providerEmoji} ${formatProviderName(provider)}`));
+            console.log("");
         } catch (error) {
-            console.error(theme.colors.error(`Error: ${error instanceof Error ? error.message : String(error)}`));
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error("");
             process.exit(1);
         }
     });
@@ -696,18 +813,34 @@ configCmd
                 PROVIDERS.map(async (p) => [p, await hasApiKey(p)] as const)
             );
 
-            console.log(theme.colors.highlight("Current configuration:"));
-            console.log(theme.colors.secondary(`  Provider: `) + theme.colors.highlight(selectedProvider));
-            console.log(theme.colors.secondary(`  Model: `) + theme.colors.highlight(effectiveModel) + theme.colors.dim(selectedModel ? "" : " (default for provider)"));
-            console.log(theme.colors.secondary(`  Storage: `) + theme.colors.highlight(config.useKeychain ? "System Keychain" : "Config File"));
-            console.log(theme.colors.secondary(`  Theme: `) + theme.colors.highlight(currentTheme.name));
-            console.log(theme.colors.secondary("\nAPI Tokens:"));
+            const providerEmoji = selectedProvider === "openai" ? "🤖" : selectedProvider === "anthropic" ? "🧠" : selectedProvider === "google" ? "✨" : "🔧";
+
+            console.log("");
+            console.log(theme.colors.primary("╭────────────────────────────────────────────╮"));
+            console.log(theme.colors.primary("│") + theme.colors.highlight("  ⚙️  MegaBuff Configuration              ") + theme.colors.primary("│"));
+            console.log(theme.colors.primary("╰────────────────────────────────────────────╯"));
+            console.log("");
+
+            console.log(theme.colors.dim("  Active Settings:"));
+            console.log(theme.colors.primary(`  ${providerEmoji} Provider: `) + theme.colors.highlight(formatProviderName(selectedProvider)));
+            console.log(theme.colors.primary(`  🎯 Model: `) + theme.colors.highlight(effectiveModel) + theme.colors.dim(selectedModel ? "" : " (default)"));
+            console.log(theme.colors.primary(`  💾 Storage: `) + theme.colors.highlight(config.useKeychain ? "System Keychain 🔐" : "Config File"));
+            console.log(theme.colors.primary(`  🎨 Theme: `) + theme.colors.highlight(currentTheme.name));
+
+            console.log("");
+            console.log(theme.colors.dim("  API Token Status:"));
             for (const [p, ok] of providerStatuses) {
-                console.log(`  ${theme.colors.secondary(p)}: ${ok ? theme.colors.success("✓ Configured") : theme.colors.dim("✗ Not configured")}`);
+                const emoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : "🔧";
+                console.log(`  ${emoji} ${theme.colors.secondary(formatProviderName(p).padEnd(16))}: ${ok ? theme.colors.success("✓ Configured") : theme.colors.dim("✗ Not configured")}`);
             }
-            console.log(theme.colors.dim(`\nConfig location: ~/.megabuff/config.json`));
+
+            console.log("");
+            console.log(theme.colors.dim("  📁 Config location: ") + theme.colors.accent("~/.megabuff/config.json"));
+            console.log("");
         } catch (error) {
-            console.error(theme.colors.error(`Error: ${error instanceof Error ? error.message : String(error)}`));
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error("");
             process.exit(1);
         }
     });
@@ -720,9 +853,14 @@ configCmd
         try {
             const provider = await getProvider(options.provider);
             await removeApiKey(provider);
-            console.log(theme.colors.success(`✓ ${provider} token removed`) + theme.colors.dim(" from config and keychain"));
+            console.log("");
+            console.log(theme.colors.success(`✓ ${formatProviderName(provider)} token removed successfully! 🗑️`));
+            console.log(theme.colors.dim("  Cleared from config file and system keychain"));
+            console.log("");
         } catch (error) {
-            console.error(theme.colors.error(`Error: ${error instanceof Error ? error.message : String(error)}`));
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error("");
             process.exit(1);
         }
     });
@@ -735,10 +873,31 @@ const themeCmd = program
         // Show current theme when no subcommand
         const currentThemeName = await getThemeName();
         const currentTheme = themes[currentThemeName];
-        console.log(theme.colors.secondary(`Current theme: `) + theme.colors.highlight(currentTheme.name));
-        console.log(theme.colors.dim(currentTheme.description));
-        console.log(theme.colors.dim("\nUse 'megabuff theme list' to see all available themes"));
-        console.log(theme.colors.dim("Use 'megabuff theme set <name>' to change theme"));
+        const { colors } = currentTheme;
+
+        console.log("");
+        console.log(theme.colors.primary("╭────────────────────────────────────────────╮"));
+        console.log(theme.colors.primary("│") + theme.colors.highlight("  🎨 Current Theme                       ") + theme.colors.primary("│"));
+        console.log(theme.colors.primary("╰────────────────────────────────────────────╯"));
+        console.log("");
+        console.log(theme.colors.primary(`  Theme: `) + theme.colors.highlight(currentTheme.name));
+        console.log(theme.colors.dim(`  ${currentTheme.description}`));
+        console.log("");
+        console.log(theme.colors.dim("  Color preview:"));
+        const preview = [
+            colors.primary("primary"),
+            colors.success("success"),
+            colors.error("error"),
+            colors.warning("warning"),
+            colors.info("info"),
+            colors.accent("accent")
+        ].join(" ");
+        console.log(`  ${preview}`);
+        console.log("");
+        console.log(theme.colors.dim("  💡 Commands:"));
+        console.log(theme.colors.accent("     megabuff theme list") + theme.colors.dim(" - See all themes"));
+        console.log(theme.colors.accent("     megabuff theme set <name>") + theme.colors.dim(" - Change theme"));
+        console.log("");
     });
 
 themeCmd
@@ -748,7 +907,11 @@ themeCmd
         const currentTheme = await getThemeName();
         const themeNames = getAllThemeNames();
 
-        console.log(theme.colors.highlight("\nAvailable Themes:\n"));
+        console.log("");
+        console.log(theme.colors.primary("╭────────────────────────────────────────────────────────────────────╮"));
+        console.log(theme.colors.primary("│") + theme.colors.highlight("  🎨 Available Themes                                             ") + theme.colors.primary("│"));
+        console.log(theme.colors.primary("╰────────────────────────────────────────────────────────────────────╯"));
+        console.log("");
 
         for (const themeName of themeNames) {
             const t = themes[themeName];
@@ -756,12 +919,12 @@ themeCmd
             const { colors } = t;
 
             // Theme name with indicator if current
-            const nameDisplay = isCurrent
-                ? colors.success(`● ${t.name}`) + theme.colors.dim(" (current)")
-                : colors.primary(`  ${t.name}`);
-
-            console.log(nameDisplay);
-            console.log(colors.dim(`  ${t.description}`));
+            if (isCurrent) {
+                console.log(colors.success(`  ● ${t.name}`) + theme.colors.dim(" ⭐ (active)"));
+            } else {
+                console.log(colors.primary(`    ${t.name}`));
+            }
+            console.log(colors.dim(`    ${t.description}`));
 
             // Show color preview
             const preview = [
@@ -772,11 +935,13 @@ themeCmd
                 colors.info("info"),
                 colors.accent("accent")
             ].join(" ");
-            console.log(`  Preview: ${preview}`);
+            console.log(`    ${preview}`);
             console.log();
         }
 
-        console.log(theme.colors.dim(`\nTo change theme: megabuff theme set <theme-name>`));
+        console.log(theme.colors.dim(`  To change theme: `) + theme.colors.accent(`megabuff theme set <theme-name>`));
+        console.log(theme.colors.dim(`  To preview theme: `) + theme.colors.accent(`megabuff theme preview <theme-name>`));
+        console.log("");
     });
 
 themeCmd
@@ -788,11 +953,14 @@ themeCmd
             const normalizedTheme = themeName.toLowerCase() as ThemeName;
 
             if (!isValidTheme(normalizedTheme)) {
-                console.error(theme.colors.error(`Error: Unknown theme '${themeName}'`));
-                console.error(theme.colors.warning("\nAvailable themes:"));
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Unknown theme '${themeName}'`));
+                console.error("");
+                console.error(theme.colors.dim("   Available themes:"));
                 getAllThemeNames().forEach(name => {
-                    console.error(theme.colors.secondary(`  - ${name}`));
+                    console.error(theme.colors.info(`     • ${name}`));
                 });
+                console.error("");
                 process.exit(1);
             }
 
@@ -802,11 +970,14 @@ themeCmd
             const newTheme = themes[normalizedTheme];
             const { colors } = newTheme;
 
-            console.log(colors.success(`\n✓ Theme changed to: `) + colors.highlight(newTheme.name));
-            console.log(colors.dim(newTheme.description));
+            console.log("");
+            console.log(colors.success(`✓ Theme changed successfully! 🎨`));
+            console.log(colors.dim(`  Now using: `) + colors.highlight(newTheme.name));
+            console.log(colors.dim(`  ${newTheme.description}`));
 
             // Show preview
-            console.log(colors.dim("\nColor preview:"));
+            console.log("");
+            console.log(colors.dim("  Color preview:"));
             const preview = [
                 colors.primary("primary"),
                 colors.success("success"),
@@ -815,9 +986,12 @@ themeCmd
                 colors.info("info"),
                 colors.accent("accent")
             ].join(" ");
-            console.log(`  ${preview}\n`);
+            console.log(`  ${preview}`);
+            console.log("");
         } catch (error) {
-            console.error(theme.colors.error(`Error: ${error instanceof Error ? error.message : String(error)}`));
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error("");
             process.exit(1);
         }
     });
@@ -831,39 +1005,54 @@ themeCmd
             const normalizedTheme = themeName.toLowerCase() as ThemeName;
 
             if (!isValidTheme(normalizedTheme)) {
-                console.error(theme.colors.error(`Error: Unknown theme '${themeName}'`));
-                console.error(theme.colors.warning("\nAvailable themes:"));
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Unknown theme '${themeName}'`));
+                console.error("");
+                console.error(theme.colors.dim("   Available themes:"));
                 getAllThemeNames().forEach(name => {
-                    console.error(theme.colors.secondary(`  - ${name}`));
+                    console.error(theme.colors.info(`     • ${name}`));
                 });
+                console.error("");
                 process.exit(1);
             }
 
             const previewTheme = themes[normalizedTheme];
             const { colors } = previewTheme;
 
-            console.log(colors.primary("\n╭─────────────────────────────────────╮"));
-            console.log(colors.primary("│") + colors.highlight(`   ${previewTheme.name} Theme Preview          `) + colors.primary("│"));
-            console.log(colors.primary("╰─────────────────────────────────────╯\n"));
+            console.log("");
+            console.log(colors.primary("╭────────────────────────────────────────────────────────╮"));
+            console.log(colors.primary("│") + colors.highlight(`  🎨 ${previewTheme.name} Theme Preview                   `.padEnd(55)) + colors.primary("│"));
+            console.log(colors.primary("╰────────────────────────────────────────────────────────╯"));
+            console.log("");
 
-            console.log(colors.dim(previewTheme.description + "\n"));
+            console.log(colors.dim(`  ${previewTheme.description}`));
+            console.log("");
 
-            console.log(colors.primary("Primary text and headings"));
-            console.log(colors.secondary("Secondary text"));
-            console.log(colors.success("✓ Success messages"));
-            console.log(colors.error("✗ Error messages"));
-            console.log(colors.warning("⚠ Warning messages"));
-            console.log(colors.info("ℹ Info messages"));
-            console.log(colors.highlight("Highlighted text"));
-            console.log(colors.accent("Accent color"));
-            console.log(colors.dim("Dimmed/secondary information\n"));
+            console.log(colors.dim("  Color Palette:"));
+            console.log("");
+            console.log(colors.primary("  ● Primary text and headings"));
+            console.log(colors.secondary("  ● Secondary text and descriptions"));
+            console.log(colors.success("  ✓ Success messages and confirmations"));
+            console.log(colors.error("  ✗ Error messages and warnings"));
+            console.log(colors.warning("  ⚠ Warning and important notes"));
+            console.log(colors.info("  ℹ Info messages and details"));
+            console.log(colors.highlight("  ★ Highlighted and emphasized text"));
+            console.log(colors.accent("  ◆ Accent colors and special elements"));
+            console.log(colors.dim("  ○ Dimmed and secondary information"));
+            console.log("");
 
             const currentTheme = await getThemeName();
             if (currentTheme !== normalizedTheme) {
-                console.log(colors.dim(`To use this theme: megabuff theme set ${normalizedTheme}\n`));
+                console.log(colors.dim("  To activate this theme: ") + colors.accent(`megabuff theme set ${normalizedTheme}`));
+                console.log("");
+            } else {
+                console.log(colors.success("  ⭐ This is your current active theme!"));
+                console.log("");
             }
         } catch (error) {
-            console.error(theme.colors.error(`Error: ${error instanceof Error ? error.message : String(error)}`));
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error("");
             process.exit(1);
         }
     });
@@ -889,7 +1078,10 @@ program
             const original = await getInput(inlinePrompt, options);
 
             if (!original.trim()) {
-                console.error(theme.colors.error("Error: No prompt provided"));
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("No prompt provided"));
+                console.error(theme.colors.dim("   Provide a prompt inline, via --file, or through stdin"));
+                console.error("");
                 process.exit(1);
             }
 
@@ -912,11 +1104,15 @@ program
             }
 
             if (!apiKey) {
-                throw new Error(
-                    `No token configured for provider '${provider}'. ` +
-                    `Run: megabuff config set --provider ${provider} <token> ` +
-                    `or set the appropriate environment variable.`
-                );
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`No API key configured for ${formatProviderName(provider)}`));
+                console.error("");
+                console.error(theme.colors.dim("   Configure your API key using:"));
+                console.error(theme.colors.accent(`   megabuff config set --provider ${provider} <your-api-key>`));
+                console.error("");
+                console.error(theme.colors.dim("   Or set an environment variable for this provider"));
+                console.error("");
+                process.exit(1);
             }
 
             // Get the configured model (if any) for this provider
@@ -925,7 +1121,8 @@ program
             debugLog("model.selected", { configuredModel, modelToUse, provider });
 
             // Route to the appropriate provider's optimization function
-            const spinner = createSpinner(`Optimizing with ${formatProviderName(provider)}${modelToUse ? ` (${modelToUse})` : ""}...`);
+            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : "✨";
+            const spinner = createSpinner(`${providerEmoji} Optimizing your prompt with ${formatProviderName(provider)}${modelToUse ? ` (${modelToUse})` : ""}...`);
             spinner.start();
 
             let optimized: string;
@@ -938,22 +1135,27 @@ program
                 } else if (provider === "google") {
                     optimized = await optimizePromptGemini(original, apiKey, modelToUse);
                 } else {
-                    throw new Error(
-                        `Provider '${provider}' is not supported yet in optimize. ` +
-                        `Supported providers: openai, anthropic, google`
-                    );
+                    console.error("");
+                    console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Provider '${provider}' is not supported for optimization`));
+                    console.error("");
+                    console.error(theme.colors.dim("   Supported providers: ") + theme.colors.info("openai, anthropic, google"));
+                    console.error("");
+                    process.exit(1);
                 }
+                const duration = ((Date.now() - t0) / 1000).toFixed(1);
                 debugLog("optimize.done", { provider, ms: Date.now() - t0, optimizedLength: optimized.length });
-                spinner.stop(`Optimized with ${formatProviderName(provider)}`);
+                spinner.stop(`✨ Optimization complete in ${duration}s!`);
             } catch (e) {
                 debugLog("optimize.error", { provider, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e) });
-                spinner.fail(`Optimization failed (${formatProviderName(provider)})`);
+                spinner.fail(`💥 Optimization failed with ${formatProviderName(provider)}`);
                 throw e;
             }
 
             await outputResult(original, optimized, options);
         } catch (error) {
-            console.error(theme.colors.error(`Error: ${error instanceof Error ? error.message : String(error)}`));
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error("");
             process.exit(1);
         }
     });
