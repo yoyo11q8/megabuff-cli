@@ -2,6 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { homedir } from "os";
 import { MODEL_PROVIDER_MAP } from "./models.js";
+import type { ThemeName } from "./themes.js";
 
 const CONFIG_DIR = path.join(homedir(), ".megabuff");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
@@ -42,6 +43,7 @@ interface Config {
     apiKey?: string;
     useKeychain?: boolean;
     model?: string;
+    theme?: ThemeName;
 }
 
 /**
@@ -312,4 +314,21 @@ export async function hasApiKey(provider: Provider): Promise<boolean> {
     // Backwards-compat: pre-provider single key was OpenAI
     if (provider === "openai") return !!config.apiKey;
     return false;
+}
+
+/**
+ * Get the configured theme
+ */
+export async function getThemeName(): Promise<ThemeName> {
+    const config = await readConfig();
+    return config.theme || "default";
+}
+
+/**
+ * Set the theme
+ */
+export async function setThemeName(theme: ThemeName): Promise<void> {
+    const config = await readConfig();
+    config.theme = theme;
+    await writeConfig(config);
 }
