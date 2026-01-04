@@ -39,9 +39,11 @@ megabuff optimize "Rewrite this prompt to be clearer"
 
 ## ✨ Features
 
-- 🤖 **Multi-Provider Support** - OpenAI, Anthropic Claude, Google Gemini, & more
+- 🤖 **Multi-Provider Support** - OpenAI, Anthropic Claude, Google Gemini, xAI, DeepSeek & more
 - 🔑 **BYOK Model** - Bring your own API key, full control
 - 🎨 **16 Beautiful Themes** - Customize your CLI experience
+- 🎭 **7 Optimization Styles** - Concise, detailed, technical, creative, formal, casual, balanced
+- 🔧 **Custom System Prompts** - Ultimate control over optimization behavior
 - ⚡ **Lightning Fast** - Optimize prompts in seconds
 - 📋 **Auto-Clipboard** - Results copied automatically
 - 🔄 **Flexible Input** - Inline, file, pipe, or interactive
@@ -472,6 +474,59 @@ megabuff optimize "prompt" --interactive
 megabuff optimize "prompt" -o result.txt --no-copy
 ```
 
+### 🎨 Optimization Styles
+
+**Tailor the optimization to your needs!** Choose from 7 different styles:
+
+```bash
+# Balanced (default) - Well-rounded optimization
+megabuff optimize "your prompt"
+
+# Concise - Minimize tokens, maximize clarity
+megabuff optimize "your prompt" --style concise
+
+# Detailed - Add comprehensive context and examples
+megabuff optimize "your prompt" --style detailed
+
+# Technical - Perfect for code generation tasks
+megabuff optimize "your prompt" --style technical
+
+# Creative - Encourage imaginative outputs
+megabuff optimize "your prompt" --style creative
+
+# Formal - Professional, business-appropriate
+megabuff optimize "your prompt" --style formal
+
+# Casual - Friendly, conversational tone
+megabuff optimize "your prompt" --style casual
+```
+
+**Available Styles:**
+- `balanced` - Default, well-rounded optimization
+- `concise` - Brief and to-the-point
+- `detailed` - Comprehensive with examples
+- `technical` - Precise technical terminology
+- `creative` - Imaginative and flexible
+- `formal` - Professional and structured
+- `casual` - Conversational and approachable
+
+### 🔧 Custom System Prompts
+
+**Ultimate control!** Provide your own system prompt:
+
+```bash
+# Use a custom optimization strategy
+megabuff optimize "your prompt" --system-prompt "Focus on making this prompt more concise while maintaining all technical details"
+
+# Combine with any provider
+megabuff optimize --provider anthropic "complex task" --system-prompt "Optimize for Claude's chain-of-thought reasoning"
+```
+
+**Pro Tips:**
+- Custom prompts override all style and provider-specific optimizations
+- Great for domain-specific optimization (legal, medical, scientific)
+- Use to enforce company-specific prompt standards
+
 ---
 
 ## 🎯 Examples
@@ -503,8 +558,17 @@ megabuff theme set cyberpunk           # Set theme
 megabuff theme preview dracula         # Preview first
 megabuff theme list                    # See all options
 
+# 🎭 Use optimization styles
+megabuff optimize --style technical "Create a REST API"
+megabuff optimize --style concise "long rambling prompt here"
+megabuff optimize --style creative "Write a story about AI"
+
+# 🔬 Custom system prompts for specialized use
+megabuff optimize "medical diagnosis criteria" --system-prompt "Optimize for medical professionals. Use precise medical terminology."
+
 # 🔧 Power user combos
 megabuff optimize --file long-prompt.txt --provider anthropic -o result.txt --interactive
+megabuff optimize --provider deepseek --model deepseek-reasoner --style detailed "Complex reasoning task"
 ```
 
 ---

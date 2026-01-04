@@ -111,9 +111,83 @@ async function getInput(inlinePrompt: string | undefined, options: { file?: stri
 }
 
 /**
+ * Optimization style presets
+ */
+type OptimizationStyle = "balanced" | "concise" | "detailed" | "technical" | "creative" | "formal" | "casual";
+
+/**
+ * Get style-specific optimization instructions
+ */
+function getStyleInstructions(style: OptimizationStyle): string {
+    const styleInstructions: Record<OptimizationStyle, string> = {
+        "balanced": "",  // Default behavior, no special instructions
+
+        "concise": `
+
+OPTIMIZATION STYLE: CONCISE
+- Prioritize brevity and clarity
+- Remove unnecessary words while maintaining precision
+- Use direct, action-oriented language
+- Keep the optimized prompt as short as possible without losing essential information`,
+
+        "detailed": `
+
+OPTIMIZATION STYLE: DETAILED
+- Add comprehensive context and background information
+- Include specific examples and edge cases
+- Provide detailed guidance on expected outputs
+- Elaborate on requirements and constraints`,
+
+        "technical": `
+
+OPTIMIZATION STYLE: TECHNICAL
+- Use precise technical terminology
+- Include specific implementation details and requirements
+- Add technical constraints and specifications
+- Structure for code generation or technical tasks`,
+
+        "creative": `
+
+OPTIMIZATION STYLE: CREATIVE
+- Encourage imaginative and original outputs
+- Add inspiration and creative direction
+- Allow for flexibility and exploration
+- Focus on generating unique, innovative results`,
+
+        "formal": `
+
+OPTIMIZATION STYLE: FORMAL
+- Use professional, formal language
+- Structure with clear sections and hierarchy
+- Emphasize precision and academic/professional tone
+- Suitable for business or academic contexts`,
+
+        "casual": `
+
+OPTIMIZATION STYLE: CASUAL
+- Use conversational, friendly language
+- Keep instructions approachable and easy to understand
+- Maintain clarity without excessive formality
+- Make the prompt feel natural and accessible`
+    };
+
+    return styleInstructions[style];
+}
+
+/**
  * Generate a system prompt optimized for the specific provider and model
  */
-function getSystemPrompt(provider: Provider, model: string): string {
+function getSystemPrompt(
+    provider: Provider,
+    model: string,
+    style: OptimizationStyle = "balanced",
+    customPrompt?: string
+): string {
+    // If custom prompt is provided, use it directly
+    if (customPrompt) {
+        return customPrompt;
+    }
+
     const basePrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
 
 When given a prompt, you should:
@@ -124,6 +198,9 @@ When given a prompt, you should:
 5. Maintain the original intent while enhancing effectiveness
 
 Return ONLY the optimized prompt without explanations or meta-commentary.`;
+
+    // Add style-specific instructions
+    const styleInstructions = getStyleInstructions(style);
 
     // Provider-specific enhancements
     const providerEnhancements: Record<Provider, string> = {
@@ -213,16 +290,22 @@ IMPORTANT: This model supports vision capabilities. When optimizing:
 - Specify desired output format for visual information extraction`;
     }
 
-    return basePrompt + providerEnhancements[provider] + modelEnhancement;
+    return basePrompt + styleInstructions + providerEnhancements[provider] + modelEnhancement;
 }
 
 /**
  * Optimize a prompt using OpenAI
  */
-async function optimizePromptOpenAI(prompt: string, apiKey: string, model?: string): Promise<string> {
+async function optimizePromptOpenAI(
+    prompt: string,
+    apiKey: string,
+    model?: string,
+    style: OptimizationStyle = "balanced",
+    customPrompt?: string
+): Promise<string> {
     const openai = new OpenAI({ apiKey });
     const selectedModel = model ?? getDefaultModel("openai");
-    const systemPrompt = getSystemPrompt("openai", selectedModel);
+    const systemPrompt = getSystemPrompt("openai", selectedModel, style, customPrompt);
 
     try {
         debugLog("openai.request.start", { model: selectedModel, promptLength: prompt.length });
@@ -248,10 +331,16 @@ async function optimizePromptOpenAI(prompt: string, apiKey: string, model?: stri
 /**
  * Optimize a prompt using Anthropic Claude
  */
-async function optimizePromptAnthropic(prompt: string, apiKey: string, model?: string): Promise<string> {
+async function optimizePromptAnthropic(
+    prompt: string,
+    apiKey: string,
+    model?: string,
+    style: OptimizationStyle = "balanced",
+    customPrompt?: string
+): Promise<string> {
     const anthropic = new Anthropic({ apiKey });
     const selectedModel = model ?? getDefaultModel("anthropic");
-    const systemPrompt = getSystemPrompt("anthropic", selectedModel);
+    const systemPrompt = getSystemPrompt("anthropic", selectedModel, style, customPrompt);
 
     try {
         debugLog("anthropic.request.start", { model: selectedModel, promptLength: prompt.length });
@@ -285,10 +374,16 @@ async function optimizePromptAnthropic(prompt: string, apiKey: string, model?: s
 /**
  * Optimize a prompt using Google Gemini
  */
-async function optimizePromptGemini(prompt: string, apiKey: string, modelName?: string): Promise<string> {
+async function optimizePromptGemini(
+    prompt: string,
+    apiKey: string,
+    modelName?: string,
+    style: OptimizationStyle = "balanced",
+    customPrompt?: string
+): Promise<string> {
     const genAI = new GoogleGenerativeAI(apiKey);
     const selectedModel = modelName ?? getDefaultModel("google");
-    const systemPrompt = getSystemPrompt("google", selectedModel);
+    const systemPrompt = getSystemPrompt("google", selectedModel, style, customPrompt);
 
     try {
         debugLog("gemini.request.start", { model: selectedModel, promptLength: prompt.length });
@@ -319,9 +414,15 @@ async function optimizePromptGemini(prompt: string, apiKey: string, modelName?: 
 /**
  * Optimize a prompt using xAI (Grok)
  */
-async function optimizePromptXAI(prompt: string, apiKey: string, modelName?: string): Promise<string> {
+async function optimizePromptXAI(
+    prompt: string,
+    apiKey: string,
+    modelName?: string,
+    style: OptimizationStyle = "balanced",
+    customPrompt?: string
+): Promise<string> {
     const selectedModel = modelName ?? getDefaultModel("xai");
-    const systemPrompt = getSystemPrompt("xai", selectedModel);
+    const systemPrompt = getSystemPrompt("xai", selectedModel, style, customPrompt);
 
     try {
         debugLog("xai.request.start", { model: selectedModel, promptLength: prompt.length });
@@ -363,14 +464,20 @@ async function optimizePromptXAI(prompt: string, apiKey: string, modelName?: str
 /**
  * Optimize a prompt using DeepSeek
  */
-async function optimizePromptDeepSeek(prompt: string, apiKey: string, modelName?: string): Promise<string> {
+async function optimizePromptDeepSeek(
+    prompt: string,
+    apiKey: string,
+    modelName?: string,
+    style: OptimizationStyle = "balanced",
+    customPrompt?: string
+): Promise<string> {
     // DeepSeek uses OpenAI-compatible API
     const openai = new OpenAI({
         apiKey: apiKey,
         baseURL: "https://api.deepseek.com"
     });
     const selectedModel = modelName ?? getDefaultModel("deepseek");
-    const systemPrompt = getSystemPrompt("deepseek", selectedModel);
+    const systemPrompt = getSystemPrompt("deepseek", selectedModel, style, customPrompt);
 
     try {
         debugLog("deepseek.request.start", { model: selectedModel, promptLength: prompt.length });
@@ -1238,6 +1345,8 @@ program
     .option("--no-copy", "Don't copy optimized prompt to clipboard (copy is default)")
     .option("-k, --api-key <key>", "Provider API key/token (overrides saved config)")
     .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
+    .option("-s, --style <style>", "Optimization style (balanced, concise, detailed, technical, creative, formal, casual)", "balanced")
+    .option("--system-prompt <prompt>", "Custom system prompt (overrides all other prompts)")
     .action(async (inlinePrompt, options) => {
         try {
             debugLog("optimize.invoked", {
@@ -1290,6 +1399,23 @@ program
             const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
             debugLog("model.selected", { configuredModel, modelToUse, provider });
 
+            // Validate optimization style
+            const validStyles: OptimizationStyle[] = ["balanced", "concise", "detailed", "technical", "creative", "formal", "casual"];
+            const style = options.style as OptimizationStyle;
+            if (!validStyles.includes(style)) {
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Invalid style '${options.style}'`));
+                console.error("");
+                console.error(theme.colors.dim("   Valid styles: ") + theme.colors.info(validStyles.join(", ")));
+                console.error("");
+                process.exit(1);
+            }
+
+            const customPrompt = options.systemPrompt;
+            if (customPrompt) {
+                debugLog("customPrompt.provided", { length: customPrompt.length });
+            }
+
             // Route to the appropriate provider's optimization function
             const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
             const spinner = createSpinner(`${providerEmoji} Optimizing your prompt with ${formatProviderName(provider)}${modelToUse ? ` (${modelToUse})` : ""}...`);
@@ -1299,15 +1425,15 @@ program
             const t0 = Date.now();
             try {
                 if (provider === "openai") {
-                    optimized = await optimizePromptOpenAI(original, apiKey, modelToUse);
+                    optimized = await optimizePromptOpenAI(original, apiKey, modelToUse, style, customPrompt);
                 } else if (provider === "anthropic") {
-                    optimized = await optimizePromptAnthropic(original, apiKey, modelToUse);
+                    optimized = await optimizePromptAnthropic(original, apiKey, modelToUse, style, customPrompt);
                 } else if (provider === "google") {
-                    optimized = await optimizePromptGemini(original, apiKey, modelToUse);
+                    optimized = await optimizePromptGemini(original, apiKey, modelToUse, style, customPrompt);
                 } else if (provider === "xai") {
-                    optimized = await optimizePromptXAI(original, apiKey, modelToUse);
+                    optimized = await optimizePromptXAI(original, apiKey, modelToUse, style, customPrompt);
                 } else if (provider === "deepseek") {
-                    optimized = await optimizePromptDeepSeek(original, apiKey, modelToUse);
+                    optimized = await optimizePromptDeepSeek(original, apiKey, modelToUse, style, customPrompt);
                 } else {
                     console.error("");
                     console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Provider '${provider}' is not supported for optimization`));
