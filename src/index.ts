@@ -111,22 +111,118 @@ async function getInput(inlinePrompt: string | undefined, options: { file?: stri
 }
 
 /**
+ * Generate a system prompt optimized for the specific provider and model
+ */
+function getSystemPrompt(provider: Provider, model: string): string {
+    const basePrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
+
+When given a prompt, you should:
+1. Identify ambiguities or unclear instructions
+2. Add relevant context that would improve results
+3. Structure the prompt for better clarity
+4. Ensure specificity and actionable requests
+5. Maintain the original intent while enhancing effectiveness
+
+Return ONLY the optimized prompt without explanations or meta-commentary.`;
+
+    // Provider-specific enhancements
+    const providerEnhancements: Record<Provider, string> = {
+        "openai": `
+
+Special considerations for OpenAI models:
+- Emphasize clear, structured outputs with numbered lists or step-by-step instructions
+- Include explicit format specifications (JSON, markdown, etc.) when relevant
+- Front-load important context and instructions for better attention`,
+
+        "anthropic": `
+
+Special considerations for Claude (Anthropic):
+- Leverage Claude's strong reasoning by including "think step-by-step" guidance when appropriate
+- Use XML tags for structured sections when complex parsing is needed
+- Emphasize nuanced, detailed instructions that benefit from deep analysis
+- Include relevant examples when demonstrating complex tasks`,
+
+        "google": `
+
+Special considerations for Gemini:
+- Emphasize concise, clear instructions with specific goals
+- Structure prompts with clear headings and logical sections
+- Include concrete examples when demonstrating desired output format`,
+
+        "xai": `
+
+Special considerations for Grok:
+- Focus on direct, actionable instructions
+- Emphasize clarity and specificity
+- Structure complex information hierarchically`,
+
+        "deepseek": `
+
+Special considerations for DeepSeek:
+- For reasoning tasks: Include analytical thinking prompts and step-by-step breakdown requests
+- For conversational tasks: Emphasize clear but precise instructions
+- Structure complex tasks into logical sequential steps`,
+
+        "azure-openai": `
+
+Special considerations for Azure OpenAI:
+- Follow OpenAI best practices with enterprise-focused clarity
+- Emphasize structured outputs and explicit format requirements`
+    };
+
+    // Model-specific enhancements
+    let modelEnhancement = "";
+
+    // DeepSeek reasoner gets special treatment for analytical tasks
+    if (model === "deepseek-reasoner") {
+        modelEnhancement = `
+
+IMPORTANT: This is a reasoning-focused model. When optimizing:
+- Add explicit instructions to "think through the problem step by step"
+- Structure the prompt to encourage analytical breakdown and verification
+- Include reasoning checkpoints or self-verification steps where appropriate`;
+    }
+
+    // Claude Opus models excel at complex reasoning
+    else if (model.includes("opus")) {
+        modelEnhancement = `
+
+IMPORTANT: This is a highly capable reasoning model. When optimizing:
+- Don't hesitate to add complexity and nuance for sophisticated tasks
+- Include multi-step reasoning requirements when beneficial
+- Add quality checks or self-verification steps for complex outputs`;
+    }
+
+    // Fast/efficient models benefit from conciseness
+    else if (model.includes("mini") || model.includes("flash") || model.includes("haiku") || model.includes("lite")) {
+        modelEnhancement = `
+
+IMPORTANT: This is a fast, efficient model. When optimizing:
+- Keep prompts concise but complete - avoid unnecessary verbosity
+- Front-load the most critical instructions and requirements
+- Maintain clarity while optimizing for token efficiency`;
+    }
+
+    // Vision models need special handling
+    else if (model.includes("vision")) {
+        modelEnhancement = `
+
+IMPORTANT: This model supports vision capabilities. When optimizing:
+- If the prompt involves images, include specific guidance about what to analyze
+- Structure image analysis requests with clear focus areas
+- Specify desired output format for visual information extraction`;
+    }
+
+    return basePrompt + providerEnhancements[provider] + modelEnhancement;
+}
+
+/**
  * Optimize a prompt using OpenAI
  */
 async function optimizePromptOpenAI(prompt: string, apiKey: string, model?: string): Promise<string> {
     const openai = new OpenAI({ apiKey });
     const selectedModel = model ?? getDefaultModel("openai");
-
-    const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
-
-When given a prompt, you should:
-1. Identify ambiguities or unclear instructions
-2. Add relevant context that would improve results
-3. Structure the prompt for clarity
-4. Specify expected output format if not present
-5. Make the prompt more specific and actionable
-
-Return ONLY the optimized prompt, without explanations or meta-commentary.`;
+    const systemPrompt = getSystemPrompt("openai", selectedModel);
 
     try {
         debugLog("openai.request.start", { model: selectedModel, promptLength: prompt.length });
@@ -155,17 +251,7 @@ Return ONLY the optimized prompt, without explanations or meta-commentary.`;
 async function optimizePromptAnthropic(prompt: string, apiKey: string, model?: string): Promise<string> {
     const anthropic = new Anthropic({ apiKey });
     const selectedModel = model ?? getDefaultModel("anthropic");
-
-    const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
-
-When given a prompt, you should:
-1. Identify ambiguities or unclear instructions
-2. Add relevant context that would improve results
-3. Structure the prompt for better clarity
-4. Ensure the prompt follows best practices
-5. Make it more specific and actionable
-
-Return ONLY the optimized prompt without explanations or meta-commentary.`;
+    const systemPrompt = getSystemPrompt("anthropic", selectedModel);
 
     try {
         debugLog("anthropic.request.start", { model: selectedModel, promptLength: prompt.length });
@@ -202,17 +288,7 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
 async function optimizePromptGemini(prompt: string, apiKey: string, modelName?: string): Promise<string> {
     const genAI = new GoogleGenerativeAI(apiKey);
     const selectedModel = modelName ?? getDefaultModel("google");
-
-    const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
-
-When given a prompt, you should:
-1. Identify ambiguities or unclear instructions
-2. Add relevant context that would improve results
-3. Structure the prompt for better clarity
-4. Ensure the prompt follows best practices
-5. Make it more specific and actionable
-
-Return ONLY the optimized prompt without explanations or meta-commentary.`;
+    const systemPrompt = getSystemPrompt("google", selectedModel);
 
     try {
         debugLog("gemini.request.start", { model: selectedModel, promptLength: prompt.length });
@@ -245,17 +321,7 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
  */
 async function optimizePromptXAI(prompt: string, apiKey: string, modelName?: string): Promise<string> {
     const selectedModel = modelName ?? getDefaultModel("xai");
-
-    const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
-
-When given a prompt, you should:
-1. Identify ambiguities or unclear instructions
-2. Add relevant context that would improve results
-3. Structure the prompt for better clarity
-4. Ensure the prompt follows best practices
-5. Make it more specific and actionable
-
-Return ONLY the optimized prompt without explanations or meta-commentary.`;
+    const systemPrompt = getSystemPrompt("xai", selectedModel);
 
     try {
         debugLog("xai.request.start", { model: selectedModel, promptLength: prompt.length });
@@ -304,17 +370,7 @@ async function optimizePromptDeepSeek(prompt: string, apiKey: string, modelName?
         baseURL: "https://api.deepseek.com"
     });
     const selectedModel = modelName ?? getDefaultModel("deepseek");
-
-    const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
-
-When given a prompt, you should:
-1. Identify ambiguities or unclear instructions
-2. Add relevant context that would improve results
-3. Structure the prompt for better clarity
-4. Ensure the prompt follows best practices
-5. Make it more specific and actionable
-
-Return ONLY the optimized prompt without explanations or meta-commentary.`;
+    const systemPrompt = getSystemPrompt("deepseek", selectedModel);
 
     try {
         debugLog("deepseek.request.start", { model: selectedModel, promptLength: prompt.length });
