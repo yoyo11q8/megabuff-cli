@@ -1334,6 +1334,180 @@ themeCmd
         }
     });
 
+// Comparison mode function
+async function runComparisonMode(
+    original: string,
+    style: OptimizationStyle,
+    customPrompt: string | undefined,
+    iterations: number,
+    options: any
+): Promise<void> {
+    console.log("");
+    console.log(theme.colors.primary("🔍 Comparison Mode") + theme.colors.dim(" - Testing multiple providers..."));
+    console.log("");
+
+    // Parse requested providers if specified
+    let requestedProviders: Provider[] | undefined;
+    if (options.providers) {
+        const providerList = options.providers.split(",").map((p: string) => p.trim().toLowerCase());
+        requestedProviders = [];
+
+        for (const p of providerList) {
+            if (!PROVIDERS.includes(p)) {
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Invalid provider '${p}'`));
+                console.error("");
+                console.error(theme.colors.dim("   Valid providers: ") + theme.colors.info(PROVIDERS.join(", ")));
+                console.error("");
+                process.exit(1);
+            }
+            requestedProviders.push(p as Provider);
+        }
+    }
+
+    // Get all available providers with configured API keys
+    const availableProviders: Provider[] = [];
+    const providerKeys: Record<Provider, string> = {} as Record<Provider, string>;
+
+    const providersToCheck = requestedProviders || (PROVIDERS as readonly string[]);
+    for (const p of providersToCheck) {
+        try {
+            const { apiKey } = await getApiKeyInfo(p as Provider, options.apiKey);
+            if (apiKey) {
+                availableProviders.push(p as Provider);
+                providerKeys[p as Provider] = apiKey;
+            }
+        } catch {
+            // Skip providers without API keys
+        }
+    }
+
+    if (availableProviders.length === 0) {
+        const errorMsg = requestedProviders
+            ? `None of the requested providers (${requestedProviders.join(", ")}) have configured API keys`
+            : "No providers have configured API keys";
+        console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(errorMsg));
+        console.error("");
+        console.error(theme.colors.dim("   Configure API keys using:"));
+        console.error(theme.colors.accent("   megabuff config set --provider <provider> <api-key>"));
+        console.error("");
+        process.exit(1);
+    }
+
+    if (availableProviders.length === 1) {
+        const warningMsg = requestedProviders
+            ? `Only one of the requested providers has a configured API key`
+            : "Only one provider has a configured API key";
+        console.error(theme.colors.warning("⚠️  Warning: ") + theme.colors.dim(warningMsg));
+        console.error("");
+        console.error(theme.colors.dim("   Comparison mode requires at least 2 providers"));
+        if (requestedProviders) {
+            console.error(theme.colors.dim("   Add more providers to the --providers list or configure more API keys"));
+        } else {
+            console.error(theme.colors.dim("   Configure more providers using:"));
+            console.error(theme.colors.accent("   megabuff config set --provider <provider> <api-key>"));
+        }
+        console.error("");
+        process.exit(1);
+    }
+
+    console.log(theme.colors.dim(`  Testing ${availableProviders.length} providers: ${availableProviders.map(formatProviderName).join(", ")}`));
+    console.log("");
+
+    // Run optimization for each provider in parallel
+    const results: Array<{ provider: Provider; result: string; duration: number; error?: string }> = [];
+
+    await Promise.all(
+        availableProviders.map(async (provider) => {
+            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
+            const spinner = createSpinner(`${providerEmoji} Optimizing with ${formatProviderName(provider)}...`);
+            spinner.start();
+
+            const startTime = Date.now();
+            let optimized = original;
+
+            try {
+                const apiKey = providerKeys[provider];
+                const configuredModel = await getModel();
+                const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+
+                // Run iterations for this provider
+                for (let i = 0; i < iterations; i++) {
+                    if (provider === "openai") {
+                        optimized = await optimizePromptOpenAI(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else if (provider === "anthropic") {
+                        optimized = await optimizePromptAnthropic(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else if (provider === "google") {
+                        optimized = await optimizePromptGemini(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else if (provider === "xai") {
+                        optimized = await optimizePromptXAI(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else if (provider === "deepseek") {
+                        optimized = await optimizePromptDeepSeek(optimized, apiKey, modelToUse, style, customPrompt);
+                    }
+                }
+
+                const duration = Date.now() - startTime;
+                spinner.stop(`✨ ${formatProviderName(provider)} complete in ${(duration / 1000).toFixed(1)}s`);
+                results.push({ provider, result: optimized, duration });
+            } catch (error) {
+                const duration = Date.now() - startTime;
+                spinner.fail(`❌ ${formatProviderName(provider)} failed`);
+                results.push({
+                    provider,
+                    result: "",
+                    duration,
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        })
+    );
+
+    // Sort results by provider name for consistent display
+    results.sort((a, b) => a.provider.localeCompare(b.provider));
+
+    // Display comparison results
+    console.log("");
+    console.log(theme.colors.primary("📊 Comparison Results"));
+    console.log(theme.colors.dim("─".repeat(80)));
+    console.log("");
+
+    for (const { provider, result, duration, error } of results) {
+        const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
+
+        console.log(theme.colors.secondary(`${providerEmoji} ${formatProviderName(provider).toUpperCase()}`));
+        console.log(theme.colors.dim(`   Duration: ${(duration / 1000).toFixed(1)}s | Length: ${result.length} chars`));
+        console.log("");
+
+        if (error) {
+            console.log(theme.colors.error(`   ❌ Error: ${error}`));
+        } else {
+            console.log(theme.colors.dim("   Result:"));
+            console.log(result.split("\n").map(line => `   ${line}`).join("\n"));
+        }
+
+        console.log("");
+        console.log(theme.colors.dim("─".repeat(80)));
+        console.log("");
+    }
+
+    // Summary statistics
+    const successfulResults = results.filter(r => !r.error);
+    if (successfulResults.length > 0) {
+        const avgDuration = successfulResults.reduce((sum, r) => sum + r.duration, 0) / successfulResults.length;
+        const avgLength = successfulResults.reduce((sum, r) => sum + r.result.length, 0) / successfulResults.length;
+
+        console.log(theme.colors.primary("📈 Summary"));
+        console.log(theme.colors.dim(`   Successful: ${successfulResults.length}/${results.length} providers`));
+        console.log(theme.colors.dim(`   Average duration: ${(avgDuration / 1000).toFixed(1)}s`));
+        console.log(theme.colors.dim(`   Average length: ${Math.round(avgLength)} chars`));
+        console.log("");
+    }
+
+    // Don't copy to clipboard or write to file in comparison mode
+    console.log(theme.colors.dim("💡 Tip: Choose the result that best fits your needs and run optimization again with that specific provider"));
+    console.log("");
+}
+
 // Optimize command
 program
     .command("optimize")
@@ -1348,6 +1522,8 @@ program
     .option("-s, --style <style>", "Optimization style (balanced, concise, detailed, technical, creative, formal, casual)", "balanced")
     .option("--system-prompt <prompt>", "Custom system prompt (overrides all other prompts)")
     .option("--iterations <number>", "Number of optimization passes (1-5, default: 1)", "1")
+    .option("-c, --compare", "Compare optimizations from multiple providers side-by-side")
+    .option("--providers <providers>", "Comma-separated list of providers to compare (e.g., 'openai,anthropic,google')")
     .action(async (inlinePrompt, options) => {
         try {
             debugLog("optimize.invoked", {
@@ -1430,6 +1606,12 @@ program
 
             if (iterations > 1) {
                 debugLog("iterations.enabled", { count: iterations });
+            }
+
+            // Comparison mode: run optimization across multiple providers
+            if (options.compare) {
+                await runComparisonMode(original, style, customPrompt, iterations, options);
+                return;
             }
 
             // Route to the appropriate provider's optimization function

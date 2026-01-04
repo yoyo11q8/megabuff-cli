@@ -45,6 +45,7 @@ megabuff optimize "Rewrite this prompt to be clearer"
 - 🎭 **7 Optimization Styles** - Concise, detailed, technical, creative, formal, casual, balanced
 - 🔧 **Custom System Prompts** - Ultimate control over optimization behavior
 - 🔄 **Iterative Refinement** - Progressive improvement with multiple optimization passes
+- 🔍 **Comparison Mode** - Test multiple providers side-by-side to find the best result
 - ⚡ **Lightning Fast** - Optimize prompts in seconds
 - 📋 **Auto-Clipboard** - Results copied automatically
 - 🔀 **Flexible Input** - Inline, file, pipe, or interactive
@@ -558,6 +559,56 @@ megabuff optimize --iterations 3 --style detailed --provider anthropic "technica
 - Creative writing prompts that benefit from layered refinement
 - When you want the absolute best optimization possible
 
+### 🔍 Comparison Mode
+
+**Can't decide which provider to use?** Test them all at once!
+
+```bash
+# Compare optimizations from all configured providers
+megabuff optimize "your prompt" --compare
+
+# Compare specific providers only
+megabuff optimize "your prompt" --compare --providers openai,anthropic
+megabuff optimize "your prompt" --compare --providers openai,anthropic,google
+
+# Combine with styles and iterations
+megabuff optimize "complex prompt" --compare --style technical
+megabuff optimize "your prompt" --compare --iterations 3
+megabuff optimize "your prompt" --compare --providers openai,deepseek --style concise
+```
+
+**How it works:**
+- Runs optimization across all providers with configured API keys (or specified providers)
+- Executes all providers in parallel for speed
+- Shows side-by-side results with timing and statistics
+- Requires at least 2 providers with configured API keys
+
+**Select specific providers:**
+- Use `--providers` flag with comma-separated provider names
+- Example: `--providers openai,anthropic,google`
+- Only tests the providers you specify (if they have API keys configured)
+- Great for targeted comparisons
+
+**What you'll see:**
+- Individual results from each provider
+- Duration and length statistics for each
+- Average metrics across all successful providers
+- Any errors or failures clearly marked
+
+**When to use comparison mode:**
+- Evaluating which provider works best for your use case
+- Testing different AI approaches to the same problem
+- Quality assurance - seeing multiple perspectives
+- Finding the optimal provider for specific prompt types
+- A/B testing between specific providers
+
+**Pro Tips:**
+- Configure multiple providers first using `megabuff config set`
+- Results are NOT copied to clipboard (choose your favorite manually)
+- Combine with `--iterations` for comprehensive testing
+- Use `--style` to ensure consistent optimization approach across providers
+- Use `--providers` to focus on specific providers you want to compare
+
 ---
 
 ## 🎯 Examples
@@ -601,10 +652,18 @@ megabuff optimize "medical diagnosis criteria" --system-prompt "Optimize for med
 megabuff optimize --iterations 3 "draft blog post intro"
 megabuff optimize --iterations 5 --style detailed "complex technical spec"
 
+# 🔍 Compare multiple providers side-by-side
+megabuff optimize --compare "Create a REST API for user management"
+megabuff optimize --compare --style technical "Explain quantum entanglement"
+megabuff optimize --compare --iterations 3 "Write a product description"
+megabuff optimize --compare --providers openai,anthropic "Which AI writes better code?"
+megabuff optimize --compare --providers openai,anthropic,google --style concise "Short & sweet"
+
 # 🔧 Power user combos
 megabuff optimize --file long-prompt.txt --provider anthropic -o result.txt --interactive
 megabuff optimize --provider deepseek --model deepseek-reasoner --style detailed "Complex reasoning task"
 megabuff optimize --iterations 3 --style technical --provider anthropic "API documentation"
+megabuff optimize --compare --providers openai,deepseek --style concise --iterations 2 "Head-to-head test"
 ```
 
 ---
@@ -725,11 +784,17 @@ cd megabuff-cli
 # Install dependencies
 npm install
 
-# Run in dev mode
-npm run dev optimize "Your prompt"
+# Run in dev mode (note the -- separator before arguments)
+npm run dev -- optimize "Your prompt"
 
-# Or use tsx directly
+# With flags (always use -- to pass arguments to the script)
+npm run dev -- optimize "Your prompt" --compare --providers openai,anthropic
+npm run dev -- optimize "Your prompt" --style technical --iterations 3
+npm run dev -- optimize "Write a function that returns random fishes" --compare --providers google,openai --style concise --iterations 2
+
+# Or use tsx directly (no -- needed)
 npx tsx src/index.ts optimize "Your prompt"
+npx tsx src/index.ts optimize "Your prompt" --compare --providers openai,anthropic
 ```
 
 ### 📦 Build & Publish
