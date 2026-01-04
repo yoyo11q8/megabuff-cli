@@ -260,19 +260,32 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
     try {
         debugLog("xai.request.start", { model: selectedModel, promptLength: prompt.length });
 
-        const result = await generateText({
-            model: xai(selectedModel, { apiKey }),
-            system: systemPrompt,
-            prompt: `Optimize this prompt:\n\n${prompt}`,
-        });
+        // xAI SDK requires the API key to be set as an environment variable
+        const originalKey = process.env.XAI_API_KEY;
+        process.env.XAI_API_KEY = apiKey;
 
-        debugLog("xai.request.done", { textLength: result.text.length });
+        try {
+            const result = await generateText({
+                model: xai(selectedModel),
+                system: systemPrompt,
+                prompt: `Optimize this prompt:\n\n${prompt}`,
+            });
 
-        if (!result.text) {
-            throw new Error("No response from xAI API");
+            debugLog("xai.request.done", { textLength: result.text.length });
+
+            if (!result.text) {
+                throw new Error("No response from xAI API");
+            }
+
+            return result.text;
+        } finally {
+            // Restore original environment variable
+            if (originalKey !== undefined) {
+                process.env.XAI_API_KEY = originalKey;
+            } else {
+                delete process.env.XAI_API_KEY;
+            }
         }
-
-        return result.text;
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`xAI API error: ${error.message}`);
