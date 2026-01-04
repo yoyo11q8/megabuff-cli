@@ -46,6 +46,7 @@ megabuff optimize "Rewrite this prompt to be clearer"
 - 🔧 **Custom System Prompts** - Ultimate control over optimization behavior
 - 🔄 **Iterative Refinement** - Progressive improvement with multiple optimization passes
 - 🔍 **Comparison Mode** - Test multiple providers side-by-side to find the best result
+- 📊 **Prompt Analysis** - Get detailed feedback on strengths, weaknesses, and improvement suggestions
 - ⚡ **Lightning Fast** - Optimize prompts in seconds
 - 📋 **Auto-Clipboard** - Results copied automatically
 - 🔀 **Flexible Input** - Inline, file, pipe, or interactive
@@ -618,6 +619,55 @@ megabuff optimize "your prompt" --compare --providers openai,deepseek --style co
 - Use `--style` to ensure consistent optimization approach across providers
 - Use `--providers` to focus on specific providers you want to compare
 
+### 📊 Prompt Analysis
+
+**Not sure what's wrong with your prompt?** Get detailed AI-powered feedback!
+
+```bash
+# Analyze a prompt and get comprehensive feedback
+megabuff analyze "Write a function that does stuff"
+
+# Analyze from a file
+megabuff analyze --file my-prompt.txt
+
+# Use a specific provider for analysis
+megabuff analyze --provider anthropic "Explain quantum computing"
+
+# Save analysis to a file
+megabuff analyze "your prompt" --output analysis.txt
+
+# Analyze without copying to clipboard
+megabuff analyze "your prompt" --no-copy
+```
+
+**What you get:**
+- **Overall Assessment** - Summary of the prompt's quality and purpose
+- **Strengths** - 3-5 specific things the prompt does well
+- **Weaknesses & Issues** - Problems, ambiguities, or areas for improvement
+- **Specific Suggestions** - Actionable recommendations for enhancement
+- **Key Improvements** - The most impactful changes to prioritize
+- **Clarity Score** - Numeric rating (1-10) with justification
+
+**How it works:**
+- AI analyzes your prompt structure, clarity, and effectiveness
+- Provides constructive, actionable feedback
+- Identifies ambiguities and missing context
+- Suggests concrete improvements
+- Results are automatically copied to clipboard (unless `--no-copy` is used)
+
+**When to use prompt analysis:**
+- Before optimizing - understand what needs fixing first
+- Learning prompt engineering - see what makes prompts effective
+- Debugging poor AI responses - identify prompt issues
+- Quality assurance - validate prompts meet standards
+- Training others - explain good vs. bad prompt patterns
+
+**Pro Tips:**
+- Use analysis before optimization to understand what to focus on
+- Different providers may highlight different aspects - try multiple!
+- Save analyses to build a library of prompt engineering patterns
+- Combine with `optimize` - analyze first, then optimize based on feedback
+
 ---
 
 ## 🎯 Examples
@@ -669,11 +719,21 @@ megabuff optimize --compare --iterations 3 "Write a product description"
 megabuff optimize --compare --providers openai,anthropic "Which AI writes better code?"
 megabuff optimize --compare --providers openai,anthropic,google --style concise "Short & sweet"
 
+# 📊 Analyze prompts for detailed feedback
+megabuff analyze "Write a function that does stuff"
+megabuff analyze --provider anthropic "Explain how neural networks work"
+megabuff analyze --file draft-prompt.txt --output analysis-report.txt
+megabuff analyze "Create a chatbot for customer support" --provider openai
+
 # 🔧 Power user combos
 megabuff optimize --file long-prompt.txt --provider anthropic -o result.txt --interactive
 megabuff optimize --provider deepseek --model deepseek-reasoner --style detailed "Complex reasoning task"
 megabuff optimize --iterations 3 --style technical --provider anthropic "API documentation"
 megabuff optimize --compare --providers openai,deepseek --style concise --iterations 2 "Head-to-head test"
+
+# 💡 Analysis + Optimization workflow
+megabuff analyze "my prompt" --output analysis.txt    # Understand issues first
+megabuff optimize "my prompt" --style technical       # Then optimize based on feedback
 ```
 
 ---

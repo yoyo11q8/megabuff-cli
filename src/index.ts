@@ -511,6 +511,222 @@ async function optimizePromptDeepSeek(
     }
 }
 
+/**
+ * Generate a system prompt for prompt analysis
+ */
+function getAnalysisSystemPrompt(): string {
+    return `You are an expert prompt engineer analyzing prompts for AI language models.
+
+Your task is to provide a comprehensive analysis of the given prompt. Structure your analysis as follows:
+
+## 📊 Overall Assessment
+Provide a brief 2-3 sentence summary of the prompt's quality and primary purpose.
+
+## ✅ Strengths
+List 3-5 specific strengths of this prompt. Be concrete and explain why each strength matters.
+
+## ⚠️ Weaknesses & Issues
+Identify 3-5 specific problems, ambiguities, or areas for improvement. Explain the impact of each issue.
+
+## 💡 Specific Suggestions
+Provide 3-5 actionable recommendations for improvement. Be specific about what to change and why.
+
+## 🎯 Key Improvements
+Highlight the 2-3 most important changes that would have the biggest impact.
+
+## 📈 Clarity Score
+Rate the prompt's clarity on a scale of 1-10, with a brief justification.
+
+Be direct, constructive, and specific in your analysis. Focus on actionable feedback that will genuinely improve the prompt's effectiveness.`;
+}
+
+/**
+ * Analyze a prompt using OpenAI
+ */
+async function analyzePromptOpenAI(
+    prompt: string,
+    apiKey: string,
+    model?: string
+): Promise<string> {
+    const openai = new OpenAI({ apiKey });
+    const selectedModel = model ?? getDefaultModel("openai");
+    const systemPrompt = getAnalysisSystemPrompt();
+
+    try {
+        debugLog("openai.analyze.start", { model: selectedModel, promptLength: prompt.length });
+        const response = await openai.chat.completions.create({
+            model: selectedModel,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: `Analyze this prompt:\n\n${prompt}` }
+            ],
+            temperature: 0.7,
+        });
+
+        debugLog("openai.analyze.done", { choices: response.choices?.length });
+        return response.choices[0]?.message?.content || "Error: No response from OpenAI";
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`OpenAI API error: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
+/**
+ * Analyze a prompt using Anthropic Claude
+ */
+async function analyzePromptAnthropic(
+    prompt: string,
+    apiKey: string,
+    model?: string
+): Promise<string> {
+    const anthropic = new Anthropic({ apiKey });
+    const selectedModel = model ?? getDefaultModel("anthropic");
+    const systemPrompt = getAnalysisSystemPrompt();
+
+    try {
+        debugLog("anthropic.analyze.start", { model: selectedModel, promptLength: prompt.length });
+        const response = await anthropic.messages.create({
+            model: selectedModel,
+            max_tokens: 4096,
+            system: systemPrompt,
+            messages: [
+                {
+                    role: "user",
+                    content: `Analyze this prompt:\n\n${prompt}`
+                }
+            ]
+        });
+
+        debugLog("anthropic.analyze.done", { contentItems: response.content?.length });
+        const content = response.content?.[0];
+        if (content?.type === "text") {
+            return content.text;
+        }
+
+        throw new Error("Unexpected response format from Anthropic API");
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`Anthropic API error: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
+/**
+ * Analyze a prompt using Google Gemini
+ */
+async function analyzePromptGemini(
+    prompt: string,
+    apiKey: string,
+    model?: string
+): Promise<string> {
+    const selectedModel = model ?? getDefaultModel("google");
+    const systemPrompt = getAnalysisSystemPrompt();
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const gemini = genAI.getGenerativeModel({ model: selectedModel });
+
+    try {
+        debugLog("google.analyze.start", { model: selectedModel, promptLength: prompt.length });
+        const result = await gemini.generateContent(`${systemPrompt}\n\nAnalyze this prompt:\n\n${prompt}`);
+        const response = result.response;
+        const text = response.text();
+
+        debugLog("google.analyze.done", { responseLength: text.length });
+        return text;
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`Google Gemini API error: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
+/**
+ * Analyze a prompt using xAI (Grok)
+ */
+async function analyzePromptXAI(
+    prompt: string,
+    apiKey: string,
+    model?: string
+): Promise<string> {
+    const selectedModel = model ?? getDefaultModel("xai");
+    const systemPrompt = getAnalysisSystemPrompt();
+
+    try {
+        debugLog("xai.analyze.start", { model: selectedModel, promptLength: prompt.length });
+
+        // xAI SDK requires the API key to be set as an environment variable
+        const originalKey = process.env.XAI_API_KEY;
+        process.env.XAI_API_KEY = apiKey;
+
+        try {
+            const result = await generateText({
+                model: xai(selectedModel),
+                system: systemPrompt,
+                prompt: `Analyze this prompt:\n\n${prompt}`,
+            });
+
+            debugLog("xai.analyze.done", { textLength: result.text.length });
+
+            if (!result.text) {
+                throw new Error("No response from xAI API");
+            }
+
+            return result.text;
+        } finally {
+            // Restore original environment variable
+            if (originalKey !== undefined) {
+                process.env.XAI_API_KEY = originalKey;
+            } else {
+                delete process.env.XAI_API_KEY;
+            }
+        }
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`xAI API error: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
+/**
+ * Analyze a prompt using DeepSeek
+ */
+async function analyzePromptDeepSeek(
+    prompt: string,
+    apiKey: string,
+    model?: string
+): Promise<string> {
+    const openai = new OpenAI({
+        apiKey,
+        baseURL: "https://api.deepseek.com"
+    });
+    const selectedModel = model ?? getDefaultModel("deepseek");
+    const systemPrompt = getAnalysisSystemPrompt();
+
+    try {
+        debugLog("deepseek.analyze.start", { model: selectedModel, promptLength: prompt.length });
+        const response = await openai.chat.completions.create({
+            model: selectedModel,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: `Analyze this prompt:\n\n${prompt}` }
+            ],
+            temperature: 0.7,
+        });
+
+        debugLog("deepseek.analyze.done", { choices: response.choices?.length });
+        return response.choices[0]?.message?.content || "Error: No response from DeepSeek";
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`DeepSeek API error: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
 function formatProviderName(provider: Provider): string {
     if (provider === "openai") return "OpenAI";
     if (provider === "anthropic") return "Anthropic";
@@ -1697,6 +1913,137 @@ program
             }
 
             await outputResult(original, optimized, options);
+        } catch (error) {
+            console.error("");
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error("");
+            process.exit(1);
+        }
+    });
+
+// Analyze command - get detailed feedback on a prompt
+program
+    .command("analyze")
+    .description("Analyze a prompt and get detailed feedback")
+    .argument("[prompt]", "The prompt to analyze (or omit to use other input methods)")
+    .option("-f, --file <path>", "Read prompt from file")
+    .option("-o, --output <path>", "Write analysis to file")
+    .option("--no-copy", "Don't copy analysis to clipboard (copy is default)")
+    .option("-k, --api-key <key>", "Provider API key/token (overrides saved config)")
+    .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
+    .action(async (inlinePrompt, options) => {
+        try {
+            debugLog("analyze.invoked", {
+                argv: process.argv.slice(2),
+                tty: { stdin: !!process.stdin.isTTY, stdout: !!process.stdout.isTTY, stderr: !!process.stderr.isTTY },
+                options: { file: options.file, output: options.output, copy: options.copy !== false, provider: options.provider, hasApiKeyFlag: !!options.apiKey }
+            });
+            const original = await getInput(inlinePrompt, options);
+
+            if (!original.trim()) {
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("No prompt provided"));
+                console.error(theme.colors.dim("   Provide a prompt inline, via --file, or through stdin"));
+                console.error("");
+                process.exit(1);
+            }
+
+            let provider = await getProvider(options.provider);
+            debugLog("provider.selected", { provider });
+
+            // Get API key with priority: CLI flag > env var > keychain > config file
+            let { apiKey, source } = await getApiKeyInfo(provider, options.apiKey);
+            debugLog("token.resolved", { provider, source, token: maskSecret(apiKey) });
+
+            // Interactive first-run setup (TTY only)
+            if (!apiKey && process.stdin.isTTY && process.stdout.isTTY) {
+                debugLog("token.missing.firstRunPrompt.start");
+                const firstRun = await promptFirstRunConfig();
+                debugLog("token.missing.firstRunPrompt.done", { provider: firstRun.provider, useKeychain: firstRun.useKeychain, token: maskSecret(firstRun.apiKey) });
+                await setApiKey(firstRun.provider, firstRun.apiKey, firstRun.useKeychain);
+                provider = firstRun.provider;
+                ({ apiKey, source } = await getApiKeyInfo(provider));
+                debugLog("token.resolved.afterFirstRun", { provider, source, token: maskSecret(apiKey) });
+            }
+
+            if (!apiKey) {
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`No API key configured for ${formatProviderName(provider)}`));
+                console.error("");
+                console.error(theme.colors.dim("   Configure your API key using:"));
+                console.error(theme.colors.accent(`   megabuff config set --provider ${provider} <your-api-key>`));
+                console.error("");
+                console.error(theme.colors.dim("   Or set an environment variable for this provider"));
+                console.error("");
+                process.exit(1);
+            }
+
+            // Get the configured model (if any) for this provider
+            const configuredModel = await getModel();
+            const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+            debugLog("model.selected", { configuredModel, modelToUse, provider });
+
+            console.log("");
+            console.log(theme.colors.primary("🔍 Analyzing your prompt..."));
+            console.log("");
+
+            const spinner = createSpinner(`Analyzing with ${formatProviderName(provider)}...`);
+            spinner.start();
+
+            const t0 = Date.now();
+            let analysis: string;
+
+            try {
+                if (provider === "openai") {
+                    analysis = await analyzePromptOpenAI(original, apiKey, modelToUse);
+                } else if (provider === "anthropic") {
+                    analysis = await analyzePromptAnthropic(original, apiKey, modelToUse);
+                } else if (provider === "google") {
+                    analysis = await analyzePromptGemini(original, apiKey, modelToUse);
+                } else if (provider === "xai") {
+                    analysis = await analyzePromptXAI(original, apiKey, modelToUse);
+                } else if (provider === "deepseek") {
+                    analysis = await analyzePromptDeepSeek(original, apiKey, modelToUse);
+                } else {
+                    throw new Error(`Unsupported provider: ${provider}`);
+                }
+
+                const duration = ((Date.now() - t0) / 1000).toFixed(1);
+                spinner.stop(`Analysis complete in ${duration}s`);
+                debugLog("analyze.done", { provider, ms: Date.now() - t0, analysisLength: analysis.length });
+            } catch (e) {
+                debugLog("analyze.error", { provider, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e) });
+                spinner.fail("Analysis failed");
+                console.error("");
+                throw e;
+            }
+
+            // Output the analysis
+            console.log("");
+            console.log(theme.colors.dim("─".repeat(80)));
+            console.log("");
+            console.log(analysis);
+            console.log("");
+            console.log(theme.colors.dim("─".repeat(80)));
+            console.log("");
+
+            // Handle output options
+            if (options.output) {
+                await fs.writeFile(options.output, analysis, "utf-8");
+                console.log(theme.colors.success(`💾 Analysis saved to ${options.output}`));
+                console.log("");
+            }
+
+            // Copy to clipboard by default (unless --no-copy is specified)
+            if (options.copy !== false) {
+                try {
+                    await clipboardy.default.write(analysis);
+                    console.log(theme.colors.info("📋 Analysis copied to clipboard"));
+                    console.log("");
+                } catch (error) {
+                    debugLog("clipboard.error", { error: error instanceof Error ? error.message : String(error) });
+                }
+            }
         } catch (error) {
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
