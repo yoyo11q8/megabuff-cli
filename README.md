@@ -44,9 +44,10 @@ megabuff optimize "Rewrite this prompt to be clearer"
 - 🎨 **16 Beautiful Themes** - Customize your CLI experience
 - 🎭 **7 Optimization Styles** - Concise, detailed, technical, creative, formal, casual, balanced
 - 🔧 **Custom System Prompts** - Ultimate control over optimization behavior
+- 🔄 **Iterative Refinement** - Progressive improvement with multiple optimization passes
 - ⚡ **Lightning Fast** - Optimize prompts in seconds
 - 📋 **Auto-Clipboard** - Results copied automatically
-- 🔄 **Flexible Input** - Inline, file, pipe, or interactive
+- 🔀 **Flexible Input** - Inline, file, pipe, or interactive
 - 💾 **Multiple Output Formats** - Stdout, file, or interactive view
 - 🔒 **Secure Storage** - Keychain support for API keys
 - 🎯 **Smart Model Selection** - Auto-detects provider from model name
@@ -527,6 +528,36 @@ megabuff optimize --provider anthropic "complex task" --system-prompt "Optimize 
 - Great for domain-specific optimization (legal, medical, scientific)
 - Use to enforce company-specific prompt standards
 
+### 🔄 Iterative Refinement
+
+**Progressive improvement!** Run multiple optimization passes:
+
+```bash
+# Single pass (default)
+megabuff optimize "your prompt"
+
+# 3 iterations for progressive refinement
+megabuff optimize "your prompt" --iterations 3
+
+# Maximum refinement (5 passes)
+megabuff optimize "complex prompt" --iterations 5
+
+# Combine with styles and providers
+megabuff optimize --iterations 3 --style detailed --provider anthropic "technical documentation"
+```
+
+**How it works:**
+- Each iteration takes the previous output and optimizes it further
+- Great for complex prompts that need multiple rounds of refinement
+- Iterations are limited to 1-5 to balance quality and cost
+- Progress is shown for each iteration with individual timing
+
+**When to use multiple iterations:**
+- Complex, multi-part prompts
+- Technical documentation that needs precision
+- Creative writing prompts that benefit from layered refinement
+- When you want the absolute best optimization possible
+
 ---
 
 ## 🎯 Examples
@@ -566,9 +597,14 @@ megabuff optimize --style creative "Write a story about AI"
 # 🔬 Custom system prompts for specialized use
 megabuff optimize "medical diagnosis criteria" --system-prompt "Optimize for medical professionals. Use precise medical terminology."
 
+# 🔄 Iterative refinement for best results
+megabuff optimize --iterations 3 "draft blog post intro"
+megabuff optimize --iterations 5 --style detailed "complex technical spec"
+
 # 🔧 Power user combos
 megabuff optimize --file long-prompt.txt --provider anthropic -o result.txt --interactive
 megabuff optimize --provider deepseek --model deepseek-reasoner --style detailed "Complex reasoning task"
+megabuff optimize --iterations 3 --style technical --provider anthropic "API documentation"
 ```
 
 ---

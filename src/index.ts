@@ -1347,6 +1347,7 @@ program
     .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
     .option("-s, --style <style>", "Optimization style (balanced, concise, detailed, technical, creative, formal, casual)", "balanced")
     .option("--system-prompt <prompt>", "Custom system prompt (overrides all other prompts)")
+    .option("--iterations <number>", "Number of optimization passes (1-5, default: 1)", "1")
     .action(async (inlinePrompt, options) => {
         try {
             debugLog("optimize.invoked", {
@@ -1416,38 +1417,77 @@ program
                 debugLog("customPrompt.provided", { length: customPrompt.length });
             }
 
+            // Validate and parse iterations
+            const iterations = parseInt(options.iterations, 10);
+            if (isNaN(iterations) || iterations < 1 || iterations > 5) {
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Invalid iterations '${options.iterations}'`));
+                console.error("");
+                console.error(theme.colors.dim("   Iterations must be between 1 and 5"));
+                console.error("");
+                process.exit(1);
+            }
+
+            if (iterations > 1) {
+                debugLog("iterations.enabled", { count: iterations });
+            }
+
             // Route to the appropriate provider's optimization function
             const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
-            const spinner = createSpinner(`${providerEmoji} Optimizing your prompt with ${formatProviderName(provider)}${modelToUse ? ` (${modelToUse})` : ""}...`);
-            spinner.start();
 
-            let optimized: string;
+            let optimized: string = original;
             const t0 = Date.now();
+
             try {
-                if (provider === "openai") {
-                    optimized = await optimizePromptOpenAI(original, apiKey, modelToUse, style, customPrompt);
-                } else if (provider === "anthropic") {
-                    optimized = await optimizePromptAnthropic(original, apiKey, modelToUse, style, customPrompt);
-                } else if (provider === "google") {
-                    optimized = await optimizePromptGemini(original, apiKey, modelToUse, style, customPrompt);
-                } else if (provider === "xai") {
-                    optimized = await optimizePromptXAI(original, apiKey, modelToUse, style, customPrompt);
-                } else if (provider === "deepseek") {
-                    optimized = await optimizePromptDeepSeek(original, apiKey, modelToUse, style, customPrompt);
-                } else {
-                    console.error("");
-                    console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Provider '${provider}' is not supported for optimization`));
-                    console.error("");
-                    console.error(theme.colors.dim("   Supported providers: ") + theme.colors.info("openai, anthropic, google, xai, deepseek"));
-                    console.error("");
-                    process.exit(1);
+                // Iterative optimization loop
+                for (let i = 1; i <= iterations; i++) {
+                    const iterationLabel = iterations > 1 ? ` (iteration ${i}/${iterations})` : "";
+                    const spinner = createSpinner(`${providerEmoji} Optimizing your prompt with ${formatProviderName(provider)}${modelToUse ? ` (${modelToUse})` : ""}${iterationLabel}...`);
+                    spinner.start();
+
+                    const iterationStart = Date.now();
+                    let currentResult: string;
+
+                    if (provider === "openai") {
+                        currentResult = await optimizePromptOpenAI(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else if (provider === "anthropic") {
+                        currentResult = await optimizePromptAnthropic(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else if (provider === "google") {
+                        currentResult = await optimizePromptGemini(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else if (provider === "xai") {
+                        currentResult = await optimizePromptXAI(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else if (provider === "deepseek") {
+                        currentResult = await optimizePromptDeepSeek(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else {
+                        spinner.fail();
+                        console.error("");
+                        console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Provider '${provider}' is not supported for optimization`));
+                        console.error("");
+                        console.error(theme.colors.dim("   Supported providers: ") + theme.colors.info("openai, anthropic, google, xai, deepseek"));
+                        console.error("");
+                        process.exit(1);
+                    }
+
+                    const iterationDuration = ((Date.now() - iterationStart) / 1000).toFixed(1);
+                    debugLog("optimize.iteration.done", { provider, iteration: i, ms: Date.now() - iterationStart, length: currentResult.length });
+
+                    if (iterations > 1) {
+                        spinner.stop(`✨ Iteration ${i}/${iterations} complete in ${iterationDuration}s`);
+                    } else {
+                        spinner.stop(`✨ Optimization complete in ${iterationDuration}s!`);
+                    }
+
+                    optimized = currentResult;
                 }
-                const duration = ((Date.now() - t0) / 1000).toFixed(1);
-                debugLog("optimize.done", { provider, ms: Date.now() - t0, optimizedLength: optimized.length });
-                spinner.stop(`✨ Optimization complete in ${duration}s!`);
+
+                const totalDuration = ((Date.now() - t0) / 1000).toFixed(1);
+                if (iterations > 1) {
+                    console.log(theme.colors.success(`🎉 All ${iterations} iterations complete in ${totalDuration}s!`));
+                }
+                debugLog("optimize.done", { provider, iterations, totalMs: Date.now() - t0, finalLength: optimized.length });
             } catch (e) {
                 debugLog("optimize.error", { provider, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e) });
-                spinner.fail(`💥 Optimization failed with ${formatProviderName(provider)}`);
+                console.error("");
                 throw e;
             }
 
