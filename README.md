@@ -199,6 +199,7 @@ export OPENAI_API_KEY="sk-your-api-key-here"
 export ANTHROPIC_API_KEY="sk-ant-your-api-key-here"
 export GOOGLE_API_KEY="your-google-api-key-here"
 export XAI_API_KEY="xai-your-api-key-here"
+export DEEPSEEK_API_KEY="sk-your-deepseek-key-here"
 ```
 
 Add to your shell profile (`.bashrc`, `.zshrc`, etc.) to persist across sessions.
@@ -215,7 +216,7 @@ megabuff optimize --provider google "your prompt" --api-key your-google-key-here
 
 The CLI checks for your token in this order (per provider):
 1. `--api-key` flag (highest priority)
-2. Provider env var (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`)
+2. Provider env var (e.g. `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`)
 3. System keychain (if configured)
 4. Config file at `~/.megabuff/config.json`
 

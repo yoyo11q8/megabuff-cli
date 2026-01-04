@@ -281,11 +281,66 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
     }
 }
 
+/**
+ * Optimize a prompt using DeepSeek
+ */
+async function optimizePromptDeepSeek(prompt: string, apiKey: string, modelName?: string): Promise<string> {
+    // DeepSeek uses OpenAI-compatible API
+    const openai = new OpenAI({
+        apiKey: apiKey,
+        baseURL: "https://api.deepseek.com"
+    });
+    const selectedModel = modelName ?? getDefaultModel("deepseek");
+
+    const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
+
+When given a prompt, you should:
+1. Identify ambiguities or unclear instructions
+2. Add relevant context that would improve results
+3. Structure the prompt for better clarity
+4. Ensure the prompt follows best practices
+5. Make it more specific and actionable
+
+Return ONLY the optimized prompt without explanations or meta-commentary.`;
+
+    try {
+        debugLog("deepseek.request.start", { model: selectedModel, promptLength: prompt.length });
+        const response = await openai.chat.completions.create({
+            model: selectedModel,
+            messages: [
+                {
+                    role: "system",
+                    content: systemPrompt
+                },
+                {
+                    role: "user",
+                    content: `Optimize this prompt:\n\n${prompt}`
+                }
+            ]
+        });
+
+        debugLog("deepseek.request.done", { choices: response.choices?.length });
+        const content = response.choices[0]?.message?.content;
+
+        if (!content) {
+            throw new Error("No response from DeepSeek API");
+        }
+
+        return content;
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`DeepSeek API error: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
 function formatProviderName(provider: Provider): string {
     if (provider === "openai") return "OpenAI";
     if (provider === "anthropic") return "Anthropic";
     if (provider === "google") return "Google";
     if (provider === "xai") return "xAI";
+    if (provider === "deepseek") return "DeepSeek";
     if (provider === "azure-openai") return "Azure OpenAI";
     return provider;
 }
@@ -336,6 +391,7 @@ function formatProviderLabel(p: Provider): string {
     if (p === "anthropic") return "Anthropic";
     if (p === "google") return "Google Gemini";
     if (p === "xai") return "xAI (Grok)";
+    if (p === "deepseek") return "DeepSeek";
     if (p === "azure-openai") return "Azure OpenAI (coming soon)";
     return p;
 }
@@ -758,7 +814,7 @@ configCmd
         try {
             if (!providerArg) {
                 const p = await getProvider();
-                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : "🔧";
+                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : p === "deepseek" ? "🔮" : "🔧";
                 console.log("");
                 console.log(theme.colors.dim("  Current default provider:"));
                 console.log(theme.colors.primary(`  ${providerEmoji} `) + theme.colors.highlight(formatProviderName(p)));
@@ -777,7 +833,7 @@ configCmd
             }
 
             await setProvider(p);
-            const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : "🔧";
+            const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : p === "deepseek" ? "🔮" : "🔧";
             console.log("");
             console.log(theme.colors.success(`✓ Default provider updated!`));
             console.log(theme.colors.dim("  Now using: ") + theme.colors.highlight(`${providerEmoji} ${formatProviderName(p)}`));
@@ -800,7 +856,7 @@ configCmd
                 const m = await getModel();
                 const p = await getProvider();
                 const effectiveModel = m ?? getDefaultModel(p);
-                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : "🔧";
+                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : p === "deepseek" ? "🔮" : "🔧";
                 console.log("");
                 console.log(theme.colors.dim("  Current configuration:"));
                 console.log(theme.colors.primary(`  ${providerEmoji} Model: `) + theme.colors.highlight(effectiveModel) + theme.colors.dim(m ? "" : " (default)"));
@@ -819,7 +875,7 @@ configCmd
                 PROVIDERS.forEach(p => {
                     const models = getModelsByProvider(p);
                     if (models.length > 0) {
-                        const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : "🔧";
+                        const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : p === "deepseek" ? "🔮" : "🔧";
                         console.error(theme.colors.primary(`   ${providerEmoji} ${formatProviderName(p)}:`));
                         models.forEach(m => console.error(theme.colors.dim(`      • `) + theme.colors.info(m)));
                         console.error("");
@@ -829,7 +885,7 @@ configCmd
             }
 
             await setModel(modelArg);
-            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : "🔧";
+            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
             console.log("");
             console.log(theme.colors.success(`✓ Configuration updated!`));
             console.log(theme.colors.dim("  Model: ") + theme.colors.highlight(modelArg));
@@ -858,7 +914,7 @@ configCmd
                 PROVIDERS.map(async (p) => [p, await hasApiKey(p)] as const)
             );
 
-            const providerEmoji = selectedProvider === "openai" ? "🤖" : selectedProvider === "anthropic" ? "🧠" : selectedProvider === "google" ? "✨" : selectedProvider === "xai" ? "🚀" : "🔧";
+            const providerEmoji = selectedProvider === "openai" ? "🤖" : selectedProvider === "anthropic" ? "🧠" : selectedProvider === "google" ? "✨" : selectedProvider === "xai" ? "🚀" : selectedProvider === "deepseek" ? "🔮" : "🔧";
 
             console.log("");
             console.log(theme.colors.primary("╭────────────────────────────────────────────╮"));
@@ -1166,7 +1222,7 @@ program
             debugLog("model.selected", { configuredModel, modelToUse, provider });
 
             // Route to the appropriate provider's optimization function
-            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : "🔧";
+            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
             const spinner = createSpinner(`${providerEmoji} Optimizing your prompt with ${formatProviderName(provider)}${modelToUse ? ` (${modelToUse})` : ""}...`);
             spinner.start();
 
@@ -1181,11 +1237,13 @@ program
                     optimized = await optimizePromptGemini(original, apiKey, modelToUse);
                 } else if (provider === "xai") {
                     optimized = await optimizePromptXAI(original, apiKey, modelToUse);
+                } else if (provider === "deepseek") {
+                    optimized = await optimizePromptDeepSeek(original, apiKey, modelToUse);
                 } else {
                     console.error("");
                     console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Provider '${provider}' is not supported for optimization`));
                     console.error("");
-                    console.error(theme.colors.dim("   Supported providers: ") + theme.colors.info("openai, anthropic, google, xai"));
+                    console.error(theme.colors.dim("   Supported providers: ") + theme.colors.info("openai, anthropic, google, xai, deepseek"));
                     console.error("");
                     process.exit(1);
                 }

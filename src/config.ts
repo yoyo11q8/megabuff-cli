@@ -10,9 +10,9 @@ const SERVICE_NAME = "megabuff-cli";
 // Legacy (pre-provider) keychain account name for backwards compatibility
 const LEGACY_ACCOUNT_NAME = "openai-api-key";
 
-export type Provider = "openai" | "anthropic" | "google" | "xai" | "azure-openai";
+export type Provider = "openai" | "anthropic" | "google" | "xai" | "deepseek" | "azure-openai";
 
-export const PROVIDERS: readonly Provider[] = ["openai", "anthropic", "google", "xai", "azure-openai"] as const;
+export const PROVIDERS: readonly Provider[] = ["openai", "anthropic", "google", "xai", "deepseek", "azure-openai"] as const;
 
 export { MODEL_PROVIDER_MAP };
 
@@ -27,6 +27,7 @@ export function normalizeProvider(input: string | undefined): Provider | undefin
     if (v === "anthropic") return "anthropic";
     if (v === "google" || v === "gemini") return "google";
     if (v === "xai" || v === "grok") return "xai";
+    if (v === "deepseek") return "deepseek";
     if (v === "azure-openai" || v === "azure") return "azure-openai";
     return undefined;
 }
@@ -181,6 +182,7 @@ export async function getApiKey(provider: Provider, cliKey?: string): Promise<st
     if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
     if (provider === "google" && process.env.GOOGLE_API_KEY) return process.env.GOOGLE_API_KEY;
     if (provider === "xai" && process.env.XAI_API_KEY) return process.env.XAI_API_KEY;
+    if (provider === "deepseek" && process.env.DEEPSEEK_API_KEY) return process.env.DEEPSEEK_API_KEY;
     if (provider === "azure-openai" && process.env.AZURE_OPENAI_API_KEY) return process.env.AZURE_OPENAI_API_KEY;
 
     const config = await readConfig();
@@ -221,6 +223,7 @@ export async function getApiKeyInfo(
     if (provider === "anthropic" && process.env.ANTHROPIC_API_KEY) return { apiKey: process.env.ANTHROPIC_API_KEY, source: "env" };
     if (provider === "google" && process.env.GOOGLE_API_KEY) return { apiKey: process.env.GOOGLE_API_KEY, source: "env" };
     if (provider === "xai" && process.env.XAI_API_KEY) return { apiKey: process.env.XAI_API_KEY, source: "env" };
+    if (provider === "deepseek" && process.env.DEEPSEEK_API_KEY) return { apiKey: process.env.DEEPSEEK_API_KEY, source: "env" };
     if (provider === "azure-openai" && process.env.AZURE_OPENAI_API_KEY) return { apiKey: process.env.AZURE_OPENAI_API_KEY, source: "env" };
 
     const config = await readConfig();

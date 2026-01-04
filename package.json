@@ -1,7 +1,7 @@
 {
   "name": "megabuff",
   "version": "0.8.0",
-  "description": "AI-powered prompt optimizer CLI with BYOK (Bring Your Own Key) support for OpenAI, Anthropic, Google Gemini, and xAI",
+  "description": "AI-powered prompt optimizer CLI with BYOK (Bring Your Own Key) support for OpenAI, Anthropic, Google Gemini, xAI, and DeepSeek",
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
@@ -21,6 +21,7 @@
     "claude",
     "xai",
     "grok",
+    "deepseek",
     "cli",
     "chatgpt",
     "prompt-engineering",
