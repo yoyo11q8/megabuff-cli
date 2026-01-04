@@ -5,6 +5,8 @@ import * as readline from "readline/promises";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { xai } from "@ai-sdk/xai";
+import { generateText } from "ai";
 import * as clipboardy from "clipboardy";
 import chalk from "chalk";
 import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, setProvider, setModel, getModel, normalizeProvider, getProviderForModel, MODEL_PROVIDER_MAP, PROVIDERS, type Provider, getThemeName, setThemeName } from "./config.js";
@@ -238,10 +240,52 @@ Return ONLY the optimized prompt without explanations or meta-commentary.`;
     }
 }
 
+/**
+ * Optimize a prompt using xAI (Grok)
+ */
+async function optimizePromptXAI(prompt: string, apiKey: string, modelName?: string): Promise<string> {
+    const selectedModel = modelName ?? getDefaultModel("xai");
+
+    const systemPrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
+
+When given a prompt, you should:
+1. Identify ambiguities or unclear instructions
+2. Add relevant context that would improve results
+3. Structure the prompt for better clarity
+4. Ensure the prompt follows best practices
+5. Make it more specific and actionable
+
+Return ONLY the optimized prompt without explanations or meta-commentary.`;
+
+    try {
+        debugLog("xai.request.start", { model: selectedModel, promptLength: prompt.length });
+
+        const result = await generateText({
+            model: xai(selectedModel, { apiKey }),
+            system: systemPrompt,
+            prompt: `Optimize this prompt:\n\n${prompt}`,
+        });
+
+        debugLog("xai.request.done", { textLength: result.text.length });
+
+        if (!result.text) {
+            throw new Error("No response from xAI API");
+        }
+
+        return result.text;
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`xAI API error: ${error.message}`);
+        }
+        throw error;
+    }
+}
+
 function formatProviderName(provider: Provider): string {
     if (provider === "openai") return "OpenAI";
     if (provider === "anthropic") return "Anthropic";
     if (provider === "google") return "Google";
+    if (provider === "xai") return "xAI";
     if (provider === "azure-openai") return "Azure OpenAI";
     return provider;
 }
@@ -291,6 +335,7 @@ function formatProviderLabel(p: Provider): string {
     if (p === "openai") return "OpenAI";
     if (p === "anthropic") return "Anthropic";
     if (p === "google") return "Google Gemini";
+    if (p === "xai") return "xAI (Grok)";
     if (p === "azure-openai") return "Azure OpenAI (coming soon)";
     return p;
 }
@@ -713,7 +758,7 @@ configCmd
         try {
             if (!providerArg) {
                 const p = await getProvider();
-                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : "🔧";
+                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : "🔧";
                 console.log("");
                 console.log(theme.colors.dim("  Current default provider:"));
                 console.log(theme.colors.primary(`  ${providerEmoji} `) + theme.colors.highlight(formatProviderName(p)));
@@ -732,7 +777,7 @@ configCmd
             }
 
             await setProvider(p);
-            const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : "🔧";
+            const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : "🔧";
             console.log("");
             console.log(theme.colors.success(`✓ Default provider updated!`));
             console.log(theme.colors.dim("  Now using: ") + theme.colors.highlight(`${providerEmoji} ${formatProviderName(p)}`));
@@ -755,7 +800,7 @@ configCmd
                 const m = await getModel();
                 const p = await getProvider();
                 const effectiveModel = m ?? getDefaultModel(p);
-                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : "🔧";
+                const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : "🔧";
                 console.log("");
                 console.log(theme.colors.dim("  Current configuration:"));
                 console.log(theme.colors.primary(`  ${providerEmoji} Model: `) + theme.colors.highlight(effectiveModel) + theme.colors.dim(m ? "" : " (default)"));
@@ -774,7 +819,7 @@ configCmd
                 PROVIDERS.forEach(p => {
                     const models = getModelsByProvider(p);
                     if (models.length > 0) {
-                        const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : "🔧";
+                        const providerEmoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : "🔧";
                         console.error(theme.colors.primary(`   ${providerEmoji} ${formatProviderName(p)}:`));
                         models.forEach(m => console.error(theme.colors.dim(`      • `) + theme.colors.info(m)));
                         console.error("");
@@ -784,7 +829,7 @@ configCmd
             }
 
             await setModel(modelArg);
-            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : "🔧";
+            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : "🔧";
             console.log("");
             console.log(theme.colors.success(`✓ Configuration updated!`));
             console.log(theme.colors.dim("  Model: ") + theme.colors.highlight(modelArg));
@@ -813,7 +858,7 @@ configCmd
                 PROVIDERS.map(async (p) => [p, await hasApiKey(p)] as const)
             );
 
-            const providerEmoji = selectedProvider === "openai" ? "🤖" : selectedProvider === "anthropic" ? "🧠" : selectedProvider === "google" ? "✨" : "🔧";
+            const providerEmoji = selectedProvider === "openai" ? "🤖" : selectedProvider === "anthropic" ? "🧠" : selectedProvider === "google" ? "✨" : selectedProvider === "xai" ? "🚀" : "🔧";
 
             console.log("");
             console.log(theme.colors.primary("╭────────────────────────────────────────────╮"));
@@ -1121,7 +1166,7 @@ program
             debugLog("model.selected", { configuredModel, modelToUse, provider });
 
             // Route to the appropriate provider's optimization function
-            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : "✨";
+            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : "🔧";
             const spinner = createSpinner(`${providerEmoji} Optimizing your prompt with ${formatProviderName(provider)}${modelToUse ? ` (${modelToUse})` : ""}...`);
             spinner.start();
 
@@ -1134,11 +1179,13 @@ program
                     optimized = await optimizePromptAnthropic(original, apiKey, modelToUse);
                 } else if (provider === "google") {
                     optimized = await optimizePromptGemini(original, apiKey, modelToUse);
+                } else if (provider === "xai") {
+                    optimized = await optimizePromptXAI(original, apiKey, modelToUse);
                 } else {
                     console.error("");
                     console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Provider '${provider}' is not supported for optimization`));
                     console.error("");
-                    console.error(theme.colors.dim("   Supported providers: ") + theme.colors.info("openai, anthropic, google"));
+                    console.error(theme.colors.dim("   Supported providers: ") + theme.colors.info("openai, anthropic, google, xai"));
                     console.error("");
                     process.exit(1);
                 }

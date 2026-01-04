@@ -26,12 +26,16 @@ export const MODEL_PROVIDER_MAP: Record<string, Provider> = {
     "gemini-2.5-pro": "google",
     "gemini-2.0-flash": "google",
     "gemini-2.0-flash-lite": "google",
+    // xAI (Grok) models
+    "grok-beta": "xai",
+    "grok-vision-beta": "xai",
 };
 
 export const DEFAULT_MODEL_BY_PROVIDER: Record<Provider, string> = {
     openai: "gpt-5.2",
     anthropic: "claude-opus-4-5",
     google: "gemini-2.5-flash",
+    xai: "grok-beta",
     // Placeholder until Azure OpenAI is supported end-to-end in this CLI
     "azure-openai": "gpt-4o-mini",
 };
