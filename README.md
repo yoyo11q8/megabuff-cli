@@ -59,6 +59,12 @@ megabuff optimize "Rewrite this prompt to be clearer"
 - [📦 Installation](#-installation)
 - [⚡ Quick Start](#-quick-start)
 - [🔐 Setup](#-setup)
+  - [🤖 Getting Your OpenAI API Key (BYOK)](#-getting-your-openai-api-key-byok)
+  - [🧠 Getting Your Anthropic API Key (BYOK)](#-getting-your-anthropic-api-key-byok)
+  - [✨ Getting Your Google Gemini API Key (BYOK)](#-getting-your-google-gemini-api-key-byok)
+  - [🚀 Getting Your xAI API Key (BYOK)](#-getting-your-xai-api-key-byok)
+  - [🔮 Getting Your DeepSeek API Key (BYOK)](#-getting-your-deepseek-api-key-byok)
+  - [Configuring Your API Key](#configuring-your-api-key)
 - [⚙️ Configuration Commands](#️-configuration-commands)
 - [🎨 Theme Commands](#-theme-commands)
 - [💡 Usage](#-usage)
@@ -163,6 +169,50 @@ Ready to try **Gemini**? Here's how:
 4. **Enable billing (if needed)**
    - Free tier is available for testing
    - For production usage, you may need to enable billing in Google Cloud Console
+
+### 🚀 Getting Your xAI API Key (BYOK)
+
+Want to use **Grok**? Here's how to get started:
+
+1. **Create an xAI account**
+   - Visit [x.ai](https://x.ai/) or the [xAI Console](https://console.x.ai/)
+   - Sign up or log in with your account
+
+2. **Access the API Console**
+   - Navigate to the API section in the xAI Console
+   - You may need to join the API waitlist or request access
+
+3. **Generate your API key**
+   - Click **Create API Key** or **Generate Key**
+   - Give your key a descriptive name (e.g., "MegaBuff CLI")
+   - Copy the key immediately
+
+4. **Save your key immediately**
+   - xAI keys typically start with `xai-`
+   - Store it securely - you won't be able to view it again
+
+### 🔮 Getting Your DeepSeek API Key (BYOK)
+
+Ready to use **DeepSeek**? Follow these steps:
+
+1. **Create a DeepSeek account**
+   - Visit [DeepSeek Platform](https://platform.deepseek.com/)
+   - Sign up or log in to your account
+
+2. **Set up billing**
+   - Navigate to the billing section
+   - Add payment method or credits as required
+   - DeepSeek offers competitive pricing for API usage
+
+3. **Generate your API key**
+   - Go to **API Keys** section in the dashboard
+   - Click **Create new key** or **Generate API key**
+   - Name it something like "MegaBuff CLI"
+
+4. **Save your key immediately**
+   - DeepSeek keys typically start with `sk-`
+   - Copy and store it securely
+   - You won't be able to view the full key again after creation
 
 ### Configuring Your API Key
 
