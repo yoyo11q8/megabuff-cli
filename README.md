@@ -569,6 +569,21 @@ megabuff optimize --iterations 3 --style detailed --provider anthropic "technica
 - Creative writing prompts that benefit from layered refinement
 - When you want the absolute best optimization possible
 
+**Analyze before optimizing (`--analyze-first` or `-a`):**
+- Get detailed analysis BEFORE optimization runs
+- See exactly what will be improved
+- Understand the prompt's weaknesses upfront
+- Then automatically proceed with optimization
+
+```bash
+# Analyze first, then optimize
+megabuff optimize "your prompt" --analyze-first
+megabuff optimize "your prompt" -a --style technical
+
+# Combine with iterations
+megabuff optimize "your prompt" --analyze-first --iterations 3
+```
+
 ### 🔍 Comparison Mode
 
 **Can't decide which provider to use?** Test them all at once!
@@ -711,6 +726,11 @@ megabuff optimize "medical diagnosis criteria" --system-prompt "Optimize for med
 megabuff optimize --iterations 3 "draft blog post intro"
 megabuff optimize --iterations 5 --style detailed "complex technical spec"
 megabuff optimize --iterations 3 --verbose "See how it evolves"
+
+# 🔍 Analyze first, then optimize
+megabuff optimize --analyze-first "Write a function that does stuff"
+megabuff optimize -a --style technical "Create a REST API endpoint"
+megabuff optimize --analyze-first --iterations 3 "Complex prompt that needs work"
 
 # 🔍 Compare multiple providers side-by-side
 megabuff optimize --compare "Create a REST API for user management"

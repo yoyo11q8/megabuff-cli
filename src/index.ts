@@ -1753,6 +1753,7 @@ program
     .option("-c, --compare", "Compare optimizations from multiple providers side-by-side")
     .option("--providers <providers>", "Comma-separated list of providers to compare (e.g., 'openai,anthropic,google')")
     .option("-v, --verbose", "Show output from each iteration (useful with --iterations)")
+    .option("-a, --analyze-first", "Analyze the prompt before optimizing to see what will be improved")
     .action(async (inlinePrompt, options) => {
         try {
             debugLog("optimize.invoked", {
@@ -1835,6 +1836,59 @@ program
 
             if (iterations > 1) {
                 debugLog("iterations.enabled", { count: iterations });
+            }
+
+            // Analyze first mode: show analysis before optimizing
+            if (options.analyzeFirst) {
+                console.log("");
+                console.log(theme.colors.primary("🔍 Step 1: Analyzing your prompt..."));
+                console.log("");
+
+                const analyzeSpinner = createSpinner(`Analyzing with ${formatProviderName(provider)}...`);
+                analyzeSpinner.start();
+
+                const analyzeStart = Date.now();
+                let analysis: string;
+
+                try {
+                    if (provider === "openai") {
+                        analysis = await analyzePromptOpenAI(original, apiKey, modelToUse);
+                    } else if (provider === "anthropic") {
+                        analysis = await analyzePromptAnthropic(original, apiKey, modelToUse);
+                    } else if (provider === "google") {
+                        analysis = await analyzePromptGemini(original, apiKey, modelToUse);
+                    } else if (provider === "xai") {
+                        analysis = await analyzePromptXAI(original, apiKey, modelToUse);
+                    } else if (provider === "deepseek") {
+                        analysis = await analyzePromptDeepSeek(original, apiKey, modelToUse);
+                    } else {
+                        analyzeSpinner.fail();
+                        console.error("");
+                        console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Provider '${provider}' is not supported for analysis`));
+                        console.error("");
+                        process.exit(1);
+                    }
+
+                    const analyzeDuration = ((Date.now() - analyzeStart) / 1000).toFixed(1);
+                    analyzeSpinner.stop(`Analysis complete in ${analyzeDuration}s`);
+
+                    console.log("");
+                    console.log(theme.colors.dim("─".repeat(80)));
+                    console.log("");
+                    console.log(analysis);
+                    console.log("");
+                    console.log(theme.colors.dim("─".repeat(80)));
+                    console.log("");
+                    console.log(theme.colors.primary("🔧 Step 2: Proceeding with optimization..."));
+                    console.log("");
+                } catch (error) {
+                    analyzeSpinner.fail("Analysis failed");
+                    console.error("");
+                    console.error(theme.colors.error("❌ Analysis Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+                    console.error("");
+                    console.error(theme.colors.dim("   Proceeding with optimization anyway..."));
+                    console.log("");
+                }
             }
 
             // Comparison mode: run optimization across multiple providers
