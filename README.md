@@ -582,18 +582,44 @@ npm run dev optimize "Your prompt"
 npx tsx src/index.ts optimize "Your prompt"
 ```
 
-### 📦 Build
+### 📦 Build & Publish
+
+**Building the project:**
 
 ```bash
-npm run build  # Compiles to dist/
+npm run build  # Compiles TypeScript to dist/
 ```
 
-### 🔗 Test Locally
+**Version and build:**
+
+```bash
+npm version minor  # Bump version (patch/minor/major)
+npm run build      # Compile TypeScript
+```
+
+This compiles TypeScript to JavaScript in the `dist/` folder.
+
+**Test the package locally** (optional but recommended):
+
+```bash
+npm pack
+# This creates a .tgz file you can inspect
+```
+
+**Test locally with npm link:**
 
 ```bash
 npm link  # Install as global command
 megabuff optimize "Test it out!"
 ```
+
+**Publish to npm:**
+
+```bash
+npm publish
+```
+
+The `prepublishOnly` script will automatically run `npm run build` before publishing.
 
 ---
 
