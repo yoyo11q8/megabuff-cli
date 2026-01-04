@@ -543,6 +543,9 @@ megabuff optimize "your prompt" --iterations 3
 # Maximum refinement (5 passes)
 megabuff optimize "complex prompt" --iterations 5
 
+# Show output from each iteration (verbose mode)
+megabuff optimize "your prompt" --iterations 3 --verbose
+
 # Combine with styles and providers
 megabuff optimize --iterations 3 --style detailed --provider anthropic "technical documentation"
 ```
@@ -552,6 +555,12 @@ megabuff optimize --iterations 3 --style detailed --provider anthropic "technica
 - Great for complex prompts that need multiple rounds of refinement
 - Iterations are limited to 1-5 to balance quality and cost
 - Progress is shown for each iteration with individual timing
+
+**Verbose mode (`--verbose` or `-v`):**
+- Shows the output from each iteration in real-time
+- Helps you see how the prompt evolves with each pass
+- Useful for understanding the optimization process
+- Only displays iteration outputs when using multiple iterations
 
 **When to use multiple iterations:**
 - Complex, multi-part prompts
@@ -651,6 +660,7 @@ megabuff optimize "medical diagnosis criteria" --system-prompt "Optimize for med
 # 🔄 Iterative refinement for best results
 megabuff optimize --iterations 3 "draft blog post intro"
 megabuff optimize --iterations 5 --style detailed "complex technical spec"
+megabuff optimize --iterations 3 --verbose "See how it evolves"
 
 # 🔍 Compare multiple providers side-by-side
 megabuff optimize --compare "Create a REST API for user management"
@@ -790,7 +800,8 @@ npm run dev -- optimize "Your prompt"
 # With flags (always use -- to pass arguments to the script)
 npm run dev -- optimize "Your prompt" --compare --providers openai,anthropic
 npm run dev -- optimize "Your prompt" --style technical --iterations 3
-npm run dev -- optimize "Write a function that returns random fishes" --compare --providers google,openai --style concise --iterations 2
+npm run dev -- optimize "Your prompt" --compare --providers google,openai --style concise --iterations 3
+npm run dev -- optimize "Your prompt" --compare --providers google,openai --style concise --iterations 2 --verbose
 
 # Or use tsx directly (no -- needed)
 npx tsx src/index.ts optimize "Your prompt"

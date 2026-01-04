@@ -1444,6 +1444,18 @@ async function runComparisonMode(
                     } else if (provider === "deepseek") {
                         optimized = await optimizePromptDeepSeek(optimized, apiKey, modelToUse, style, customPrompt);
                     }
+
+                    // Show iteration output if verbose mode is enabled
+                    if (options.verbose && iterations > 1) {
+                        spinner.stop();
+                        console.log("");
+                        console.log(theme.colors.primary(`📝 ${formatProviderName(provider)} - Iteration ${i + 1}/${iterations} Output:`));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log(optimized);
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log("");
+                        spinner.start();
+                    }
                 }
 
                 const duration = Date.now() - startTime;
@@ -1524,6 +1536,7 @@ program
     .option("--iterations <number>", "Number of optimization passes (1-5, default: 1)", "1")
     .option("-c, --compare", "Compare optimizations from multiple providers side-by-side")
     .option("--providers <providers>", "Comma-separated list of providers to compare (e.g., 'openai,anthropic,google')")
+    .option("-v, --verbose", "Show output from each iteration (useful with --iterations)")
     .action(async (inlinePrompt, options) => {
         try {
             debugLog("optimize.invoked", {
@@ -1657,6 +1670,16 @@ program
                         spinner.stop(`✨ Iteration ${i}/${iterations} complete in ${iterationDuration}s`);
                     } else {
                         spinner.stop(`✨ Optimization complete in ${iterationDuration}s!`);
+                    }
+
+                    // Show iteration output if verbose mode is enabled
+                    if (options.verbose && iterations > 1) {
+                        console.log("");
+                        console.log(theme.colors.primary(`📝 Iteration ${i}/${iterations} Output:`));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log(currentResult);
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log("");
                     }
 
                     optimized = currentResult;
