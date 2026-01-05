@@ -18,6 +18,9 @@
 <img width="690" src="media/github-media-banner.png" alt="MegaBuff Banner" width="100%">
 
 <br/>
+
+⭐ **[Star us on GitHub](https://github.com/thesupermegabuff/megabuff-cli)** — it helps a lot!
+
 <br/>
 </div>
 

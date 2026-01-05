@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import * as fs from "fs/promises";
 import * as readline from "readline/promises";
+import type { Interface as CallbackInterface } from "readline";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -68,9 +69,1089 @@ function exitOrThrow(message?: string): never {
     process.exit(1);
 }
 
+// ============================================================================
+// GUIDED WIZARD UTILITIES
+// These helper functions provide a consistent UX for step-by-step wizards
+// ============================================================================
+
+/**
+ * Wrapper interface for readline that works with both callback and promises APIs
+ * When in shell mode, we wrap the shell's callback-based readline
+ * When standalone, we use the promises-based readline directly
+ */
+interface WizardReadline {
+    question(query: string): Promise<string>;
+    close(): void;
+    on(event: string, listener: (...args: any[]) => void): void;
+    removeListener(event: string, listener: (...args: any[]) => void): void;
+    prompt(): void;
+    isShellRl: boolean; // Track if this is the shell's readline (don't close it)
+}
+
+/**
+ * Wrap a callback-based readline to provide async question() method
+ */
+function wrapCallbackReadline(rl: CallbackInterface): WizardReadline {
+    return {
+        question: (query: string): Promise<string> => {
+            return new Promise((resolve) => {
+                rl.question(query, (answer) => {
+                    resolve(answer);
+                });
+            });
+        },
+        close: () => {}, // Don't close the shell's readline
+        on: (event, listener) => rl.on(event, listener),
+        removeListener: (event, listener) => rl.removeListener(event, listener),
+        prompt: () => rl.prompt(),
+        isShellRl: true
+    };
+}
+
+/**
+ * Wrap a promises-based readline for consistent interface
+ */
+function wrapPromisesReadline(rl: readline.Interface): WizardReadline {
+    return {
+        question: (query: string) => rl.question(query),
+        close: () => rl.close(),
+        on: (event, listener) => rl.on(event, listener),
+        removeListener: (event, listener) => rl.removeListener(event, listener),
+        prompt: () => {}, // No-op for promises interface
+        isShellRl: false
+    };
+}
+
+/**
+ * Create a readline interface for wizard prompts
+ * If shellRl is provided (when running in shell mode), wrap it
+ * Otherwise create a new promises-based readline
+ */
+function createWizardReadline(shellRl?: CallbackInterface): WizardReadline {
+    if (shellRl) {
+        return wrapCallbackReadline(shellRl);
+    }
+    // Create new promises-based readline for standalone mode
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+    return wrapPromisesReadline(rl);
+}
+
+/**
+ * Prompt for text input with optional default value
+ */
+async function wizardPrompt(
+    rl: WizardReadline,
+    question: string,
+    defaultValue?: string
+): Promise<string> {
+    const defaultHint = defaultValue ? theme.colors.dim(` [${defaultValue}]`) : "";
+    const answer = await rl.question(theme.colors.primary(question) + defaultHint + theme.colors.primary(": "));
+    return answer.trim() || defaultValue || "";
+}
+
+/**
+ * Prompt for selection from numbered options
+ * Returns the 0-based index of the selected option
+ */
+async function wizardSelect(
+    rl: WizardReadline,
+    prompt: string,
+    options: Array<{ label: string; description?: string | undefined }>,
+    defaultIndex?: number
+): Promise<number> {
+    console.log("");
+    console.log(theme.colors.primary(prompt));
+    console.log("");
+
+    options.forEach((opt, idx) => {
+        const isDefault = idx === defaultIndex;
+        const marker = isDefault ? theme.colors.accent(" (default)") : "";
+        const num = theme.colors.highlight(`  ${idx + 1})`);
+        const label = theme.colors.secondary(opt.label);
+        const desc = opt.description ? theme.colors.dim(` - ${opt.description}`) : "";
+        console.log(`${num} ${label}${marker}${desc}`);
+    });
+
+    console.log("");
+    const defaultHint = defaultIndex !== undefined ? theme.colors.dim(` [${defaultIndex + 1}]`) : "";
+    const answer = await rl.question(theme.colors.primary("Select option") + defaultHint + theme.colors.primary(": "));
+
+    if (!answer.trim() && defaultIndex !== undefined) {
+        return defaultIndex;
+    }
+
+    const num = parseInt(answer.trim(), 10);
+    if (isNaN(num) || num < 1 || num > options.length) {
+        console.log(theme.colors.warning(`Please enter a number between 1 and ${options.length}`));
+        return wizardSelect(rl, prompt, options, defaultIndex);
+    }
+
+    return num - 1;
+}
+
+/**
+ * Prompt for yes/no confirmation
+ */
+async function wizardConfirm(
+    rl: WizardReadline,
+    question: string,
+    defaultYes: boolean = true
+): Promise<boolean> {
+    const hint = defaultYes ? theme.colors.dim(" [Y/n]") : theme.colors.dim(" [y/N]");
+    const answer = await rl.question(theme.colors.primary(question) + hint + theme.colors.primary(": "));
+    const trimmed = answer.trim().toLowerCase();
+
+    if (!trimmed) {
+        return defaultYes;
+    }
+
+    return trimmed === "y" || trimmed === "yes";
+}
+
+/**
+ * Prompt for multi-line text input (ends with empty line or Ctrl+D)
+ * For shell mode, we use simple single-line input since the shell readline
+ * already has event handlers attached.
+ */
+async function wizardMultilineInput(
+    rl: WizardReadline,
+    prompt: string
+): Promise<string> {
+    console.log("");
+    console.log(theme.colors.primary(prompt));
+
+    // In shell mode, use simple single-line input to avoid readline conflicts
+    if (rl.isShellRl) {
+        console.log(theme.colors.dim("  (Enter your text on a single line)"));
+        console.log("");
+        const answer = await rl.question(theme.colors.accent("  > "));
+        return answer.trim();
+    }
+
+    // For standalone mode, we can use multi-line input
+    console.log(theme.colors.dim("  (Enter your text, press Enter twice to finish)"));
+    console.log("");
+
+    const lines: string[] = [];
+    let emptyLineCount = 0;
+
+    return new Promise((resolve) => {
+        const lineHandler = (line: string) => {
+            if (line === "") {
+                emptyLineCount++;
+                if (emptyLineCount >= 1) {
+                    rl.removeListener("line", lineHandler);
+                    resolve(lines.join("\n").trim());
+                    return;
+                }
+            } else {
+                emptyLineCount = 0;
+            }
+            lines.push(line);
+        };
+
+        rl.on("line", lineHandler);
+        rl.prompt();
+    });
+}
+
+/**
+ * Display a wizard header
+ */
+function wizardHeader(title: string): void {
+    const width = 50;
+    console.log("");
+    console.log(theme.colors.primary("╭" + "─".repeat(width - 2) + "╮"));
+    console.log(theme.colors.primary("│") + theme.colors.highlight(` ${title}`.padEnd(width - 2)) + theme.colors.primary("│"));
+    console.log(theme.colors.primary("╰" + "─".repeat(width - 2) + "╯"));
+    console.log("");
+}
+
+/**
+ * Display a wizard step indicator
+ */
+function wizardStep(current: number, total: number, description: string): void {
+    console.log(theme.colors.accent(`\n[${current}/${total}]`) + theme.colors.secondary(` ${description}`));
+}
+
+/**
+ * Display a summary section before execution
+ */
+function wizardSummary(title: string, items: Array<{ label: string; value: string }>): void {
+    console.log("");
+    console.log(theme.colors.primary("─".repeat(50)));
+    console.log(theme.colors.highlight(`  ${title}`));
+    console.log(theme.colors.primary("─".repeat(50)));
+
+    for (const item of items) {
+        console.log(theme.colors.secondary(`  ${item.label}: `) + theme.colors.highlight(item.value));
+    }
+
+    console.log(theme.colors.primary("─".repeat(50)));
+    console.log("");
+}
+
+// ============================================================================
+// GUIDED WIZARD IMPLEMENTATIONS
+// Step-by-step interactive wizards for each command
+// ============================================================================
+
+/**
+ * Guided wizard for the optimize command
+ * Walks users through all options step-by-step
+ * @param shellRl - Optional shell readline to reuse (when running in shell mode)
+ */
+export async function guidedOptimize(shellRl?: CallbackInterface): Promise<void> {
+    const rl = createWizardReadline(shellRl);
+    const totalSteps = 8;
+
+    try {
+        wizardHeader("Optimize Prompt - Guided Setup");
+
+        // Step 1: Prompt input
+        wizardStep(1, totalSteps, "Enter your prompt");
+        const promptText = await wizardMultilineInput(rl, "What prompt would you like to optimize?");
+
+        if (!promptText.trim()) {
+            console.log(theme.colors.error("\n❌ No prompt provided. Wizard cancelled."));
+            return;
+        }
+
+        // Step 2: Provider selection
+        wizardStep(2, totalSteps, "Select AI provider");
+        const providerOptions = await Promise.all(
+            PROVIDERS.filter(p => p !== "azure-openai").map(async (p) => {
+                const hasKey = await hasApiKey(p);
+                return {
+                    label: formatProviderLabel(p),
+                    description: hasKey ? "API key configured" : "no API key",
+                    provider: p,
+                    hasKey
+                };
+            })
+        );
+
+        // Find default provider
+        const currentProvider = await getProvider();
+        const defaultProviderIndex = providerOptions.findIndex(p => p.provider === currentProvider);
+
+        const providerIndex = await wizardSelect(
+            rl,
+            "Which AI provider would you like to use?",
+            providerOptions,
+            defaultProviderIndex >= 0 ? defaultProviderIndex : 0
+        );
+        const selectedProviderOpt = providerOptions[providerIndex];
+        if (!selectedProviderOpt) {
+            console.log(theme.colors.error("\n❌ Invalid selection. Wizard cancelled."));
+            return;
+        }
+        const selectedProvider = selectedProviderOpt.provider;
+
+        // Check if provider has API key
+        if (!selectedProviderOpt.hasKey) {
+            console.log(theme.colors.warning(`\n⚠️  No API key configured for ${formatProviderLabel(selectedProvider)}`));
+            const apiKeyInput = await wizardPrompt(rl, "Enter your API key (or press Enter to cancel)");
+            if (!apiKeyInput) {
+                console.log(theme.colors.dim("\nWizard cancelled."));
+                return;
+            }
+            await setApiKey(selectedProvider, apiKeyInput, false);
+            console.log(theme.colors.success(`✓ API key saved for ${formatProviderLabel(selectedProvider)}`));
+        }
+
+        // Ask if user wants to skip remaining optional steps
+        console.log("");
+        const skipRemaining = await wizardConfirm(rl, "Skip optional steps and run with defaults?", false);
+
+        // Default values for optional steps
+        const defaultModel = getDefaultModel(selectedProvider);
+        let selectedModel: string | undefined = undefined;
+        let selectedStyle: OptimizationStyle = "balanced";
+        let iterations = 1;
+        let useCompare = false;
+        let compareProviders: Provider[] = [];
+        let showCost = false;
+        let outputFile = "";
+
+        if (!skipRemaining) {
+            // Step 3: Model selection (optional)
+            wizardStep(3, totalSteps, "Select model (optional)");
+            const availableModels = getModelsByProvider(selectedProvider);
+            const modelOptions = [
+                { label: `Default (${defaultModel})`, description: "recommended" },
+                ...availableModels.map(m => ({ label: m, description: m === defaultModel ? "default" : undefined }))
+            ];
+
+            const modelIndex = await wizardSelect(
+                rl,
+                "Which model would you like to use?",
+                modelOptions,
+                0
+            );
+            selectedModel = modelIndex === 0 ? undefined : availableModels[modelIndex - 1];
+
+            // Step 4: Style selection
+            wizardStep(4, totalSteps, "Select optimization style");
+            const styleOptions = [
+                { label: "balanced", description: "Well-rounded optimization" },
+                { label: "concise", description: "Brief and to-the-point" },
+                { label: "detailed", description: "Comprehensive with examples" },
+                { label: "technical", description: "Precise technical terminology" },
+                { label: "creative", description: "Imaginative and flexible" },
+                { label: "formal", description: "Professional and structured" },
+                { label: "casual", description: "Conversational and approachable" }
+            ];
+
+            const styleIndex = await wizardSelect(
+                rl,
+                "What optimization style would you like?",
+                styleOptions,
+                0
+            );
+            const selectedStyleOpt = styleOptions[styleIndex];
+            selectedStyle = (selectedStyleOpt?.label || "balanced") as OptimizationStyle;
+
+            // Step 5: Iterations
+            wizardStep(5, totalSteps, "Number of optimization passes");
+            console.log(theme.colors.dim("  Each pass refines the prompt further, with diminishing returns after 2-3 passes."));
+            const iterationsInput = await wizardPrompt(rl, "How many optimization passes? (1-5)", "1");
+            iterations = parseInt(iterationsInput, 10);
+            if (isNaN(iterations) || iterations < 1) iterations = 1;
+            if (iterations > 5) iterations = 5;
+
+            // Step 6: Compare mode
+            wizardStep(6, totalSteps, "Comparison mode");
+            useCompare = await wizardConfirm(rl, "Compare results across multiple providers?", false);
+
+            if (useCompare) {
+                console.log(theme.colors.dim("\nSelect providers to compare (you can select multiple):"));
+                for (const opt of providerOptions) {
+                    if (opt.hasKey) {
+                        const include = await wizardConfirm(rl, `  Include ${opt.label}?`, true);
+                        if (include) {
+                            compareProviders.push(opt.provider);
+                        }
+                    }
+                }
+                if (compareProviders.length < 2) {
+                    console.log(theme.colors.warning("Need at least 2 providers for comparison. Disabling compare mode."));
+                    compareProviders = [];
+                }
+            }
+
+            // Step 7: Show cost
+            wizardStep(7, totalSteps, "Cost display");
+            showCost = await wizardConfirm(rl, "Show cost estimates?", false);
+
+            // Step 8: Output file (optional)
+            wizardStep(8, totalSteps, "Output options");
+            outputFile = await wizardPrompt(rl, "Save to file? (path or Enter to skip)");
+        }
+
+        // Show summary
+        const summaryItems = [
+            { label: "Prompt", value: promptText.length > 50 ? promptText.substring(0, 50) + "..." : promptText },
+            { label: "Provider", value: formatProviderLabel(selectedProvider) },
+            { label: "Model", value: selectedModel || `${defaultModel} (default)` },
+            { label: "Style", value: selectedStyle + (skipRemaining ? " (default)" : "") },
+            { label: "Iterations", value: String(iterations) + (skipRemaining ? " (default)" : "") },
+            { label: "Compare mode", value: useCompare && compareProviders.length >= 2 ? `Yes (${compareProviders.length} providers)` : "No" },
+            { label: "Show cost", value: showCost ? "Yes" : "No" },
+            { label: "Output file", value: outputFile || "(none)" }
+        ];
+
+        wizardSummary(skipRemaining ? "Running with defaults" : "Configuration Summary", summaryItems);
+
+        // Skip confirmation if user already chose to use defaults (streamlined flow)
+        if (!skipRemaining) {
+            const proceed = await wizardConfirm(rl, "Proceed with optimization?", true);
+
+            if (!proceed) {
+                console.log(theme.colors.dim("\nWizard cancelled."));
+                return;
+            }
+        }
+
+        // Close readline before running the actual command
+        rl.close();
+
+        // Build options object and run optimize
+        const options: Record<string, any> = {
+            provider: selectedProvider,
+            style: selectedStyle,
+            iterations: String(iterations),
+            showCost,
+            copy: true
+        };
+
+        if (selectedModel) {
+            // Set the model temporarily for this run
+            await setModel(selectedModel);
+        }
+
+        if (outputFile) {
+            options.output = outputFile;
+        }
+
+        if (useCompare && compareProviders.length >= 2) {
+            options.compare = true;
+            options.providers = compareProviders.join(",");
+        }
+
+        // Now trigger the actual optimize command by parsing programmatically
+        // We'll construct the command args and call parseAsync
+        const args = ["node", "megabuff", "optimize", promptText];
+
+        if (options.provider) args.push("--provider", options.provider);
+        if (options.style) args.push("--style", options.style);
+        if (options.iterations) args.push("--iterations", options.iterations);
+        if (options.showCost) args.push("--show-cost");
+        if (options.output) args.push("--output", options.output);
+        if (options.compare) {
+            args.push("--compare");
+            if (options.providers) args.push("--providers", options.providers);
+        }
+
+        console.log(theme.colors.dim("\n🚀 Running optimization...\n"));
+
+        // We need to run the actual optimization logic directly
+        // rather than re-parsing to avoid infinite loops
+        await runOptimizeWithOptions(promptText, options);
+
+    } catch (error) {
+        rl.close();
+        throw error;
+    }
+}
+
+/**
+ * Core optimize logic extracted for use by guided wizard
+ */
+async function runOptimizeWithOptions(
+    promptText: string,
+    options: {
+        provider?: string;
+        style?: OptimizationStyle;
+        iterations?: string;
+        showCost?: boolean;
+        output?: string;
+        compare?: boolean;
+        providers?: string;
+        copy?: boolean;
+        interactive?: boolean;
+        apiKey?: string;
+        verbose?: boolean;
+        analyzeFirst?: boolean;
+        estimateOnly?: boolean;
+        systemPrompt?: string;
+        models?: string;
+    }
+): Promise<void> {
+    const provider = await getProvider(options.provider);
+    const { apiKey } = await getApiKeyInfo(provider, options.apiKey);
+
+    if (!apiKey) {
+        console.error(theme.colors.error("❌ No API key configured for ") + theme.colors.warning(formatProviderName(provider)));
+        exitOrThrow("No API key");
+    }
+
+    const configuredModel = await getModel();
+    const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+
+    const style: OptimizationStyle = options.style || "balanced";
+    const iterations = parseInt(options.iterations || "1", 10);
+
+    // Handle compare mode
+    if (options.compare) {
+        await runComparisonMode(
+            promptText,
+            style,
+            options.systemPrompt,
+            iterations,
+            {
+                providers: options.providers,
+                models: options.models,
+                verbose: options.verbose,
+                showCost: options.showCost
+            }
+        );
+        return;
+    }
+
+    // Cost estimation
+    if (options.showCost || options.estimateOnly) {
+        const modelForCost = modelToUse || getDefaultModelForProvider(provider);
+        const costEstimate = estimateOptimizationCost(promptText, modelForCost, iterations);
+        const pricingInfo = getPricingBreakdown(modelForCost);
+
+        console.log("");
+        console.log(theme.colors.primary("💰 Cost Estimate"));
+        console.log(theme.colors.dim("─".repeat(80)));
+        console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(modelForCost));
+
+        if (pricingInfo) {
+            console.log(theme.colors.dim(`   Pricing:`));
+            console.log(theme.colors.dim(`      Input:  $${pricingInfo.inputPricePer1M.toFixed(2)}/1M tokens (${pricingInfo.inputPricePerToken}/token)`));
+            console.log(theme.colors.dim(`      Output: $${pricingInfo.outputPricePer1M.toFixed(2)}/1M tokens (${pricingInfo.outputPricePerToken}/token)`));
+            console.log("");
+        }
+
+        console.log(theme.colors.info(`   Input tokens: `) + theme.colors.secondary(formatTokens(costEstimate.inputTokens)));
+        console.log(theme.colors.info(`   Output tokens (est): `) + theme.colors.secondary(formatTokens(costEstimate.outputTokens)));
+        console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(costEstimate.estimatedCost)));
+        console.log(theme.colors.dim("─".repeat(80)));
+        console.log("");
+
+        if (options.estimateOnly) {
+            return;
+        }
+    }
+
+    // Run optimization
+    const spinner = createSpinner(`Optimizing with ${formatProviderName(provider)}...`);
+    spinner.start();
+
+    const startTime = Date.now();
+    let result: ResultWithUsage;
+    let currentPrompt = promptText;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    try {
+        for (let i = 0; i < iterations; i++) {
+            if (iterations > 1) {
+                spinner.update(`Optimization pass ${i + 1}/${iterations}...`);
+            }
+
+            if (provider === "openai") {
+                result = await optimizePromptOpenAI(currentPrompt, apiKey, modelToUse, style, options.systemPrompt);
+            } else if (provider === "anthropic") {
+                result = await optimizePromptAnthropic(currentPrompt, apiKey, modelToUse, style, options.systemPrompt);
+            } else if (provider === "google") {
+                result = await optimizePromptGemini(currentPrompt, apiKey, modelToUse, style, options.systemPrompt);
+            } else if (provider === "xai") {
+                result = await optimizePromptXAI(currentPrompt, apiKey, modelToUse, style, options.systemPrompt);
+            } else if (provider === "deepseek") {
+                result = await optimizePromptDeepSeek(currentPrompt, apiKey, modelToUse, style, options.systemPrompt);
+            } else {
+                spinner.fail();
+                console.error(theme.colors.error(`❌ Provider '${provider}' is not supported`));
+                exitOrThrow();
+            }
+
+            totalInputTokens += result.usage.inputTokens;
+            totalOutputTokens += result.usage.outputTokens;
+            currentPrompt = result.result;
+
+            if (options.verbose && iterations > 1) {
+                spinner.stop(`Pass ${i + 1} complete`);
+                console.log(theme.colors.dim(`\n--- Iteration ${i + 1} output ---`));
+                console.log(currentPrompt);
+                console.log(theme.colors.dim(`--- End iteration ${i + 1} ---\n`));
+                if (i < iterations - 1) {
+                    spinner.start(`Optimization pass ${i + 2}/${iterations}...`);
+                }
+            }
+        }
+
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        spinner.stop(`Optimized in ${duration}s`);
+
+        // Output result
+        await outputResult(promptText, currentPrompt, {
+            output: options.output ?? undefined,
+            interactive: options.interactive ?? undefined,
+            copy: options.copy ?? undefined
+        });
+
+        // Show actual cost if requested
+        if (options.showCost) {
+            const modelForCost = modelToUse || getDefaultModelForProvider(provider);
+            const actualCost = calculateCost(totalInputTokens, totalOutputTokens, modelForCost);
+
+            console.log(theme.colors.primary("💰 Actual Cost"));
+            console.log(theme.colors.dim("─".repeat(50)));
+            console.log(theme.colors.info(`   Tokens: `) + theme.colors.secondary(`${formatTokens(totalInputTokens)} in + ${formatTokens(totalOutputTokens)} out`));
+            console.log(theme.colors.info(`   Total cost: `) + theme.colors.accent(formatCost(actualCost)));
+            console.log(theme.colors.dim("─".repeat(50)));
+            console.log("");
+        }
+
+    } catch (error) {
+        spinner.fail("Optimization failed");
+        throw error;
+    }
+}
+
+/**
+ * Guided wizard for the analyze command
+ * @param shellRl - Optional shell readline to reuse (when running in shell mode)
+ */
+export async function guidedAnalyze(shellRl?: CallbackInterface): Promise<void> {
+    const rl = createWizardReadline(shellRl);
+    const totalSteps = 5;
+
+    try {
+        wizardHeader("Analyze Prompt - Guided Setup");
+
+        // Step 1: Prompt input
+        wizardStep(1, totalSteps, "Enter your prompt");
+        const promptText = await wizardMultilineInput(rl, "What prompt would you like to analyze?");
+
+        if (!promptText.trim()) {
+            console.log(theme.colors.error("\n❌ No prompt provided. Wizard cancelled."));
+            return;
+        }
+
+        // Step 2: Provider selection
+        wizardStep(2, totalSteps, "Select AI provider");
+        const providerOptions = await Promise.all(
+            PROVIDERS.filter(p => p !== "azure-openai").map(async (p) => {
+                const hasKey = await hasApiKey(p);
+                return {
+                    label: formatProviderLabel(p),
+                    description: hasKey ? "API key configured" : "no API key",
+                    provider: p,
+                    hasKey
+                };
+            })
+        );
+
+        const currentProvider = await getProvider();
+        const defaultProviderIndex = providerOptions.findIndex(p => p.provider === currentProvider);
+
+        const providerIndex = await wizardSelect(
+            rl,
+            "Which AI provider would you like to use?",
+            providerOptions,
+            defaultProviderIndex >= 0 ? defaultProviderIndex : 0
+        );
+        const selectedProviderOpt = providerOptions[providerIndex];
+        if (!selectedProviderOpt) {
+            console.log(theme.colors.error("\n❌ Invalid selection. Wizard cancelled."));
+            return;
+        }
+        const selectedProvider = selectedProviderOpt.provider;
+
+        if (!selectedProviderOpt.hasKey) {
+            console.log(theme.colors.warning(`\n⚠️  No API key configured for ${formatProviderLabel(selectedProvider)}`));
+            const apiKeyInput = await wizardPrompt(rl, "Enter your API key (or press Enter to cancel)");
+            if (!apiKeyInput) {
+                console.log(theme.colors.dim("\nWizard cancelled."));
+                return;
+            }
+            await setApiKey(selectedProvider, apiKeyInput, false);
+            console.log(theme.colors.success(`✓ API key saved for ${formatProviderLabel(selectedProvider)}`));
+        }
+
+        // Step 3: Show cost
+        wizardStep(3, totalSteps, "Cost display");
+        const showCost = await wizardConfirm(rl, "Show cost estimates?", false);
+
+        // Step 4: Output file (optional)
+        wizardStep(4, totalSteps, "Output options");
+        const outputFile = await wizardPrompt(rl, "Save analysis to file? (path or Enter to skip)");
+
+        // Step 5: Confirmation
+        wizardStep(5, totalSteps, "Confirm");
+
+        const summaryItems = [
+            { label: "Prompt", value: promptText.length > 50 ? promptText.substring(0, 50) + "..." : promptText },
+            { label: "Provider", value: formatProviderLabel(selectedProvider) },
+            { label: "Show cost", value: showCost ? "Yes" : "No" },
+            { label: "Output file", value: outputFile || "(none)" }
+        ];
+
+        wizardSummary("Configuration Summary", summaryItems);
+
+        const proceed = await wizardConfirm(rl, "Proceed with analysis?", true);
+
+        if (!proceed) {
+            console.log(theme.colors.dim("\nWizard cancelled."));
+            return;
+        }
+
+        rl.close();
+
+        // Run analysis
+        await runAnalyzeWithOptions(promptText, {
+            provider: selectedProvider,
+            showCost,
+            output: outputFile || undefined,
+            copy: true
+        });
+
+    } catch (error) {
+        rl.close();
+        throw error;
+    }
+}
+
+/**
+ * Core analyze logic extracted for use by guided wizard
+ */
+async function runAnalyzeWithOptions(
+    promptText: string,
+    options: {
+        provider?: string;
+        showCost?: boolean;
+        output?: string;
+        copy?: boolean;
+        apiKey?: string;
+        estimateOnly?: boolean;
+    }
+): Promise<void> {
+    const provider = await getProvider(options.provider);
+    const { apiKey } = await getApiKeyInfo(provider, options.apiKey);
+
+    if (!apiKey) {
+        console.error(theme.colors.error("❌ No API key configured for ") + theme.colors.warning(formatProviderName(provider)));
+        exitOrThrow("No API key");
+    }
+
+    const configuredModel = await getModel();
+    const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+
+    // Cost estimation
+    if (options.showCost || options.estimateOnly) {
+        const modelForCost = modelToUse || getDefaultModelForProvider(provider);
+        const costEstimate = estimateAnalysisCost(promptText, modelForCost);
+
+        console.log("");
+        console.log(theme.colors.primary("💰 Cost Estimate"));
+        console.log(theme.colors.dim("─".repeat(50)));
+        console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(modelForCost));
+        console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(costEstimate.estimatedCost)));
+        console.log(theme.colors.dim("─".repeat(50)));
+        console.log("");
+
+        if (options.estimateOnly) {
+            return;
+        }
+    }
+
+    const spinner = createSpinner(`Analyzing with ${formatProviderName(provider)}...`);
+    spinner.start();
+
+    const startTime = Date.now();
+    let result: ResultWithUsage;
+
+    try {
+        if (provider === "openai") {
+            result = await analyzePromptOpenAI(promptText, apiKey, modelToUse);
+        } else if (provider === "anthropic") {
+            result = await analyzePromptAnthropic(promptText, apiKey, modelToUse);
+        } else if (provider === "google") {
+            result = await analyzePromptGemini(promptText, apiKey, modelToUse);
+        } else if (provider === "xai") {
+            result = await analyzePromptXAI(promptText, apiKey, modelToUse);
+        } else if (provider === "deepseek") {
+            result = await analyzePromptDeepSeek(promptText, apiKey, modelToUse);
+        } else {
+            spinner.fail();
+            console.error(theme.colors.error(`❌ Provider '${provider}' is not supported`));
+            exitOrThrow();
+        }
+
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        spinner.stop(`Analyzed in ${duration}s`);
+
+        // Output result
+        console.log("");
+        console.log(theme.colors.primary("─".repeat(60)));
+        console.log(theme.colors.highlight("  📊 Prompt Analysis"));
+        console.log(theme.colors.primary("─".repeat(60)));
+        console.log("");
+        console.log(result.result);
+        console.log("");
+
+        // Copy to clipboard
+        if (options.copy !== false) {
+            try {
+                await clipboardy.default.write(result.result);
+                console.log(theme.colors.success("✓ Analysis copied to clipboard"));
+            } catch {
+                // Ignore clipboard errors
+            }
+        }
+
+        // Save to file
+        if (options.output) {
+            await fs.writeFile(options.output, result.result, "utf-8");
+            console.log(theme.colors.success(`✓ Analysis saved to: `) + theme.colors.highlight(options.output));
+        }
+
+        console.log("");
+
+    } catch (error) {
+        spinner.fail("Analysis failed");
+        throw error;
+    }
+}
+
+/**
+ * Guided wizard for the theme command
+ * @param shellRl - Optional shell readline to reuse (when running in shell mode)
+ */
+export async function guidedTheme(shellRl?: CallbackInterface): Promise<void> {
+    const rl = createWizardReadline(shellRl);
+
+    try {
+        wizardHeader("Theme Settings - Guided Setup");
+
+        const actionOptions = [
+            { label: "View current theme", description: "See your active theme" },
+            { label: "List all themes", description: "Browse available themes" },
+            { label: "Change theme", description: "Set a new theme" },
+            { label: "Preview a theme", description: "See how a theme looks" }
+        ];
+
+        const actionIndex = await wizardSelect(rl, "What would you like to do?", actionOptions, 0);
+
+        const themeNames = getAllThemeNames();
+        const currentThemeName = await getThemeName();
+
+        switch (actionIndex) {
+            case 0: // View current
+                console.log("");
+                console.log(theme.colors.primary("  Current theme: ") + theme.colors.highlight(themes[currentThemeName].name));
+                console.log(theme.colors.dim(`  (${currentThemeName})`));
+                console.log("");
+                // Show color preview
+                console.log(theme.colors.dim("  Color preview:"));
+                console.log(theme.colors.primary("    Primary") + " | " + theme.colors.secondary("Secondary") + " | " + theme.colors.accent("Accent"));
+                console.log(theme.colors.success("    Success") + " | " + theme.colors.warning("Warning") + " | " + theme.colors.error("Error"));
+                console.log(theme.colors.info("    Info") + " | " + theme.colors.highlight("Highlight") + " | " + theme.colors.dim("Dim"));
+                console.log("");
+                break;
+
+            case 1: // List all
+                console.log("");
+                console.log(theme.colors.primary("  Available Themes:"));
+                console.log("");
+                for (const name of themeNames) {
+                    const t = themes[name];
+                    const isCurrent = name === currentThemeName;
+                    const marker = isCurrent ? theme.colors.accent(" ⭐ (current)") : "";
+                    console.log(t.colors.primary(`    ${t.name}`) + theme.colors.dim(` - ${name}`) + marker);
+                }
+                console.log("");
+                break;
+
+            case 2: // Change theme
+                console.log("");
+                const themeOptions = themeNames.map(name => {
+                    const t = themes[name];
+                    return {
+                        label: t.name,
+                        description: name === currentThemeName ? "current" : ""
+                    };
+                });
+
+                const themeIndex = await wizardSelect(
+                    rl,
+                    "Select a theme:",
+                    themeOptions,
+                    themeNames.indexOf(currentThemeName)
+                );
+
+                const newThemeName = themeNames[themeIndex];
+                if (newThemeName) {
+                    await setThemeName(newThemeName);
+                    clearThemeCache();
+                    theme = await getCurrentTheme();
+
+                    console.log("");
+                    console.log(theme.colors.success(`✓ Theme changed to: `) + theme.colors.highlight(themes[newThemeName].name));
+                    console.log("");
+                    // Show preview
+                    console.log(theme.colors.dim("  Color preview:"));
+                    console.log(theme.colors.primary("    Primary") + " | " + theme.colors.secondary("Secondary") + " | " + theme.colors.accent("Accent"));
+                    console.log(theme.colors.success("    Success") + " | " + theme.colors.warning("Warning") + " | " + theme.colors.error("Error"));
+                    console.log("");
+                }
+                break;
+
+            case 3: // Preview
+                console.log("");
+                const previewOptions = themeNames.map(name => ({
+                    label: themes[name].name,
+                    description: name === currentThemeName ? "current" : ""
+                }));
+
+                const previewIndex = await wizardSelect(rl, "Select a theme to preview:", previewOptions, 0);
+                const previewThemeName = themeNames[previewIndex];
+                if (previewThemeName) {
+                    const previewTheme = themes[previewThemeName];
+
+                    console.log("");
+                    console.log(previewTheme.colors.primary("╭" + "─".repeat(40) + "╮"));
+                    console.log(previewTheme.colors.primary("│") + previewTheme.colors.highlight(` Theme: ${previewTheme.name}`.padEnd(40)) + previewTheme.colors.primary("│"));
+                    console.log(previewTheme.colors.primary("╰" + "─".repeat(40) + "╯"));
+                    console.log("");
+                    console.log(previewTheme.colors.primary("  Primary text"));
+                    console.log(previewTheme.colors.secondary("  Secondary text"));
+                    console.log(previewTheme.colors.accent("  Accent text"));
+                    console.log(previewTheme.colors.success("  ✓ Success message"));
+                    console.log(previewTheme.colors.warning("  ⚠ Warning message"));
+                    console.log(previewTheme.colors.error("  ✗ Error message"));
+                    console.log(previewTheme.colors.info("  ℹ Info text"));
+                    console.log(previewTheme.colors.highlight("  Highlighted text"));
+                    console.log(previewTheme.colors.dim("  Dim/muted text"));
+                    console.log("");
+
+                    const applyPreview = await wizardConfirm(rl, "Apply this theme?", false);
+                    if (applyPreview) {
+                        await setThemeName(previewThemeName);
+                        clearThemeCache();
+                        theme = await getCurrentTheme();
+                        console.log(theme.colors.success(`\n✓ Theme changed to: `) + theme.colors.highlight(previewTheme.name));
+                    }
+                    console.log("");
+                }
+                break;
+        }
+
+        rl.close();
+
+    } catch (error) {
+        rl.close();
+        throw error;
+    }
+}
+
+/**
+ * Guided wizard for the config command
+ * @param shellRl - Optional shell readline to reuse (when running in shell mode)
+ */
+export async function guidedConfig(shellRl?: CallbackInterface): Promise<void> {
+    const rl = createWizardReadline(shellRl);
+
+    try {
+        wizardHeader("Configuration - Guided Setup");
+
+        const actionOptions = [
+            { label: "Set API token", description: "Configure a provider's API key" },
+            { label: "Set default provider", description: "Choose your preferred AI provider" },
+            { label: "Set model", description: "Choose a specific model (auto-selects provider)" },
+            { label: "View configuration", description: "See all current settings" },
+            { label: "Remove API token", description: "Delete a saved API key" }
+        ];
+
+        const actionIndex = await wizardSelect(rl, "What would you like to configure?", actionOptions, 0);
+
+        switch (actionIndex) {
+            case 0: // Set token
+                console.log("");
+                const tokenProviderOptions = PROVIDERS.filter(p => p !== "azure-openai").map(p => ({
+                    label: formatProviderLabel(p),
+                    provider: p
+                }));
+
+                const tokenProviderIndex = await wizardSelect(rl, "Select provider:", tokenProviderOptions as any, 0);
+                const tokenProvider = (tokenProviderOptions[tokenProviderIndex] as any).provider as Provider;
+
+                const token = await wizardPrompt(rl, "Enter your API token");
+                if (!token) {
+                    console.log(theme.colors.dim("\nNo token provided. Cancelled."));
+                    break;
+                }
+
+                await setApiKey(tokenProvider, token, false);
+                console.log(theme.colors.success(`\n✓ ${formatProviderLabel(tokenProvider)} token saved`));
+                console.log("");
+                break;
+
+            case 1: // Set provider
+                console.log("");
+                const providerOptions = PROVIDERS.filter(p => p !== "azure-openai").map(p => ({
+                    label: formatProviderLabel(p),
+                    provider: p
+                }));
+
+                const currentProvider = await getProvider();
+                const defaultIndex = providerOptions.findIndex(p => (p as any).provider === currentProvider);
+
+                const providerIndex = await wizardSelect(rl, "Select default provider:", providerOptions as any, defaultIndex);
+                const selectedProvider = (providerOptions[providerIndex] as any).provider as Provider;
+
+                await setProvider(selectedProvider);
+                console.log(theme.colors.success(`\n✓ Default provider set to: `) + theme.colors.highlight(formatProviderLabel(selectedProvider)));
+                console.log("");
+                break;
+
+            case 2: // Set model
+                console.log("");
+                console.log(theme.colors.primary("Available models by provider:\n"));
+
+                for (const provider of PROVIDERS.filter(p => p !== "azure-openai")) {
+                    const models = getModelsByProvider(provider);
+                    if (models.length > 0) {
+                        console.log(theme.colors.warning(`${formatProviderName(provider)}:`));
+                        models.forEach(model => console.log(theme.colors.secondary(`  - ${model}`)));
+                        console.log();
+                    }
+                }
+
+                const modelInput = await wizardPrompt(rl, "Enter model name");
+                if (!modelInput) {
+                    console.log(theme.colors.dim("\nNo model provided. Cancelled."));
+                    break;
+                }
+
+                const modelProvider = getProviderForModel(modelInput);
+                if (!modelProvider) {
+                    console.log(theme.colors.error(`\n❌ Unknown model '${modelInput}'`));
+                    break;
+                }
+
+                await setModel(modelInput);
+                console.log(theme.colors.success(`\n✓ Model set to: `) + theme.colors.highlight(modelInput));
+                console.log(theme.colors.success(`✓ Provider auto-set to: `) + theme.colors.highlight(formatProviderLabel(modelProvider)));
+                console.log("");
+                break;
+
+            case 3: // View config
+                rl.close();
+                await showConfigStatus();
+                return;
+
+            case 4: // Remove token
+                console.log("");
+                const removeProviderOptions = PROVIDERS.filter(p => p !== "azure-openai").map(p => ({
+                    label: formatProviderLabel(p),
+                    provider: p
+                }));
+
+                const removeProviderIndex = await wizardSelect(rl, "Remove token for which provider?", removeProviderOptions as any, 0);
+                const removeProvider = (removeProviderOptions[removeProviderIndex] as any).provider as Provider;
+
+                const confirmRemove = await wizardConfirm(rl, `Are you sure you want to remove the ${formatProviderLabel(removeProvider)} token?`, false);
+                if (confirmRemove) {
+                    await removeApiKey(removeProvider);
+                    console.log(theme.colors.success(`\n✓ ${formatProviderLabel(removeProvider)} token removed`));
+                } else {
+                    console.log(theme.colors.dim("\nCancelled."));
+                }
+                console.log("");
+                break;
+        }
+
+        rl.close();
+
+    } catch (error) {
+        rl.close();
+        throw error;
+    }
+}
+
 program
     .name("megabuff")
-    .description("AI prompt optimizer CLI")
+    .description("AI prompt optimizer CLI\n\n💡 Have a feature request or found a bug?\n   → https://github.com/thesupermegabuff/megabuff-cli/issues\n\n📖 Type 'megabuff help' or 'megabuff --help' for usage information")
     .version("Beta");
 
 /**
@@ -961,14 +2042,11 @@ async function promptFirstRunConfig(): Promise<{ provider: Provider; apiKey: str
             throw new Error("No token provided.");
         }
 
-        const store = (await rl.question(theme.colors.primary("Store in system keychain? (Y/n): "))).trim().toLowerCase();
-        const useKeychain = store === "" || store === "y" || store === "yes";
-
         if (!provider) {
             throw new Error("No provider selected.");
         }
 
-        return { provider, apiKey, useKeychain };
+        return { provider, apiKey, useKeychain: false };
     } finally {
         rl.close();
     }
@@ -1144,14 +2222,8 @@ async function interactiveConfig(): Promise<void> {
                     exitOrThrow("No token provided");
                 }
 
-                const store = (await rl.question(theme.colors.primary("Store in system keychain? (Y/n): "))).trim().toLowerCase();
-                const useKeychain = store === "" || store === "y" || store === "yes";
-
-                await setApiKey(provider, token, useKeychain);
-                console.log(theme.colors.success(`\n✓ ${provider} token saved`) + theme.colors.dim(useKeychain ? " securely in system keychain" : " to config file"));
-                if (!useKeychain) {
-                    console.log(theme.colors.dim("  Tip: Run with --keychain flag next time for more secure storage"));
-                }
+                await setApiKey(provider, token, false);
+                console.log(theme.colors.success(`\n✓ ${provider} token saved to config file`));
                 break;
             }
 
@@ -1337,7 +2409,6 @@ configCmd
     .description("Set API token for a provider")
     .argument("[token]", "API token (omit to be prompted)")
     .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`, "openai")
-    .option("--keychain", "Store in system keychain (more secure)")
     .action(async (token: string | undefined, options) => {
         try {
             const provider = normalizeProvider(options.provider);
@@ -1377,17 +2448,10 @@ configCmd
                 exitOrThrow();
             }
 
-            await setApiKey(provider, finalToken, options.keychain || false);
+            await setApiKey(provider, finalToken, false);
             console.error("");
-            if (options.keychain) {
-                console.log(theme.colors.success(`✓ ${formatProviderName(provider)} token saved securely! 🔐`));
-                console.log(theme.colors.dim("  Stored in system keychain for maximum security"));
-            } else {
-                console.log(theme.colors.success(`✓ ${formatProviderName(provider)} token saved! 💾`));
-                console.log(theme.colors.dim("  Stored in ") + theme.colors.accent("~/.megabuff/config.json"));
-                console.log("");
-                console.log(theme.colors.info("  💡 Tip: ") + theme.colors.dim("Use ") + theme.colors.accent("--keychain") + theme.colors.dim(" flag for more secure storage"));
-            }
+            console.log(theme.colors.success(`✓ ${formatProviderName(provider)} token saved! 💾`));
+            console.log(theme.colors.dim("  Stored in ") + theme.colors.accent("~/.megabuff/config.json"));
             console.error("");
         } catch (error) {
             console.error("");
@@ -2890,7 +3954,12 @@ program
     .aliases(['interactive', 'i'])
     .description('Start interactive shell mode (run commands without typing "megabuff" each time)')
     .action(async () => {
-        await startInteractiveShell(program);
+        await startInteractiveShell(program, {
+            optimize: guidedOptimize,
+            analyze: guidedAnalyze,
+            theme: guidedTheme,
+            config: guidedConfig
+        });
     });
 
 program.parse();

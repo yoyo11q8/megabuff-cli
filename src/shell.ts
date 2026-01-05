@@ -7,6 +7,12 @@ const theme = getTheme();
 // Module-level reference to the program instance passed to startInteractiveShell
 let shellProgram: Command;
 
+// Guided wizard functions passed in to avoid circular imports
+let guidedOptimize: (shellRl?: readline.Interface) => Promise<void>;
+let guidedAnalyze: (shellRl?: readline.Interface) => Promise<void>;
+let guidedTheme: (shellRl?: readline.Interface) => Promise<void>;
+let guidedConfig: (shellRl?: readline.Interface) => Promise<void>;
+
 // Flag to indicate we're running in interactive shell mode
 // This prevents nested interactive prompts (e.g., config menu inside shell)
 let isShellMode = false;
@@ -19,20 +25,42 @@ export function isInShellMode(): boolean {
 }
 
 /**
+ * Guided wizard functions interface
+ * Wizards receive the shell's readline to avoid creating duplicate interfaces
+ */
+export interface GuidedWizards {
+    optimize: (shellRl?: readline.Interface) => Promise<void>;
+    analyze: (shellRl?: readline.Interface) => Promise<void>;
+    theme: (shellRl?: readline.Interface) => Promise<void>;
+    config: (shellRl?: readline.Interface) => Promise<void>;
+}
+
+/**
  * Start the interactive shell mode
  * @param prog - The Commander program instance with all commands registered
+ * @param wizards - Guided wizard functions to avoid circular imports
  */
-export async function startInteractiveShell(prog: Command): Promise<void> {
+export async function startInteractiveShell(prog: Command, wizards: GuidedWizards): Promise<void> {
     // Store program reference for use in createProgramInstance
     shellProgram = prog;
+    // Store guided wizard functions
+    guidedOptimize = wizards.optimize;
+    guidedAnalyze = wizards.analyze;
+    guidedTheme = wizards.theme;
+    guidedConfig = wizards.config;
     // Set shell mode flag to prevent nested interactive prompts
     isShellMode = true;
     console.log("");
-    console.log(theme.colors.primary("╭─────────────────────────────────────────────╮"));
-    console.log(theme.colors.primary("│      🤖 MegaBuff Interactive Shell         │"));
-    console.log(theme.colors.dim("│  Type commands without 'megabuff' prefix   │"));
-    console.log(theme.colors.dim("│  'help' for commands • 'exit' to quit      │"));
-    console.log(theme.colors.primary("╰─────────────────────────────────────────────╯"));
+    console.log(theme.colors.primary("╭───────────────────────────────────────────────────────────────────╮"));
+    console.log(theme.colors.primary("│ 🤖 MegaBuff Interactive Shell                                "));
+    console.log(theme.colors.dim("│                                "));
+    console.log(theme.colors.dim("│     Type commands without 'megabuff' prefix                              "));
+    console.log(theme.colors.dim("│     Type `help` for commands • 'exit' to quit                                 "));
+    console.log(theme.colors.dim("│                                                                       "));
+    console.log(theme.colors.dim("│ 💡 Feature request? → ") + theme.colors.info("github.com/thesupermegabuff/megabuff-cli/issues"));
+    console.log(theme.colors.dim("│                                "));
+
+    console.log(theme.colors.primary("╰───────────────────────────────────────────────────────────────────╯"));
     console.log("");
 
     // Show help automatically on startup
@@ -41,7 +69,7 @@ export async function startInteractiveShell(prog: Command): Promise<void> {
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: theme.colors.accent('megabuff> '),
+        prompt: theme.colors.dim('(type help) ') + theme.colors.accent('megabuff> '),
         terminal: true
     });
 
@@ -72,11 +100,13 @@ export async function startInteractiveShell(prog: Command): Promise<void> {
         if (input.toLowerCase() === 'clear') {
             console.clear();
             console.log("");
-            console.log(theme.colors.primary("╭─────────────────────────────────────────────╮"));
-            console.log(theme.colors.primary("│      🤖 MegaBuff Interactive Shell         │"));
-            console.log(theme.colors.dim("│  Type commands without 'megabuff' prefix   │"));
-            console.log(theme.colors.dim("│  'help' for commands • 'exit' to quit      │"));
-            console.log(theme.colors.primary("╰─────────────────────────────────────────────╯"));
+            console.log(theme.colors.primary("╭───────────────────────────────────────────────────────────────────╮"));
+            console.log(theme.colors.primary("│      🤖 MegaBuff Interactive Shell                               │"));
+            console.log(theme.colors.dim("│  Type commands without 'megabuff' prefix                         │"));
+            console.log(theme.colors.dim("│  'help' for commands • 'exit' to quit                            │"));
+            console.log(theme.colors.dim("│                                                                   │"));
+            console.log(theme.colors.dim("│  💡 Feature request? → ") + theme.colors.info("github.com/thesupermegabuff/megabuff-cli/issues") + theme.colors.dim(" │"));
+            console.log(theme.colors.primary("╰───────────────────────────────────────────────────────────────────╯"));
             console.log("");
             rl.prompt();
             return;
@@ -94,17 +124,28 @@ export async function startInteractiveShell(prog: Command): Promise<void> {
             // Split input into args (handle quotes properly)
             const args = parseShellInput(input);
 
-            // Check if user is running optimize or analyze without a prompt
+            // Check if user is running commands without arguments - trigger guided mode
             const commandName = args[0]?.toLowerCase();
 
-            // Show help for optimize/analyze when run without arguments (only command, no prompt)
+            // Launch guided wizard for optimize/analyze when run without a prompt
             if ((commandName === 'optimize' || commandName === 'analyze') && args.length === 1) {
-                showCommandHelp(commandName);
+                try {
+                    if (commandName === 'optimize') {
+                        await guidedOptimize(rl);
+                    } else {
+                        await guidedAnalyze(rl);
+                    }
+                } catch (error: any) {
+                    if (!error.alreadyPrinted) {
+                        console.error(theme.colors.error(`\n❌ Error: ${error.message}\n`));
+                    }
+                }
+                console.log("");
                 rl.prompt();
                 return;
             }
 
-            // Also check if only flags are provided (no actual prompt text)
+            // Also check if only flags are provided (no actual prompt text) - show help in this case
             if ((commandName === 'optimize' || commandName === 'analyze') && args.length > 1) {
                 const hasPromptArg = args.slice(1).some(arg => !arg.startsWith('-'));
                 if (!hasPromptArg) {
@@ -112,6 +153,34 @@ export async function startInteractiveShell(prog: Command): Promise<void> {
                     rl.prompt();
                     return;
                 }
+            }
+
+            // Launch guided wizard for theme when run without subcommand
+            if (commandName === 'theme' && args.length === 1) {
+                try {
+                    await guidedTheme(rl);
+                } catch (error: any) {
+                    if (!error.alreadyPrinted) {
+                        console.error(theme.colors.error(`\n❌ Error: ${error.message}\n`));
+                    }
+                }
+                console.log("");
+                rl.prompt();
+                return;
+            }
+
+            // Launch guided wizard for config when run without subcommand
+            if (commandName === 'config' && args.length === 1) {
+                try {
+                    await guidedConfig(rl);
+                } catch (error: any) {
+                    if (!error.alreadyPrinted) {
+                        console.error(theme.colors.error(`\n❌ Error: ${error.message}\n`));
+                    }
+                }
+                console.log("");
+                rl.prompt();
+                return;
             }
 
             const commandArgs = ['node', 'megabuff', ...args];
@@ -181,12 +250,20 @@ function showShellHelp(): void {
     console.log(theme.colors.dim("═".repeat(80)));
     console.log("");
     console.log(theme.colors.info("  Main Commands:"));
-    console.log(theme.colors.secondary("    optimize <prompt>") + theme.colors.dim("              Optimize a prompt"));
-    console.log(theme.colors.secondary("    analyze <prompt>") + theme.colors.dim("               Analyze a prompt"));
-    console.log(theme.colors.secondary("    config [subcommand]") + theme.colors.dim("            Configure settings"));
-    console.log(theme.colors.secondary("    theme [subcommand]") + theme.colors.dim("             Manage themes"));
+    console.log(theme.colors.secondary("    optimize") + theme.colors.dim("                         Start guided optimization wizard"));
+    console.log(theme.colors.secondary("    optimize <prompt>") + theme.colors.dim("              Optimize a prompt directly"));
+    console.log(theme.colors.secondary("    analyze") + theme.colors.dim("                          Start guided analysis wizard"));
+    console.log(theme.colors.secondary("    analyze <prompt>") + theme.colors.dim("               Analyze a prompt directly"));
+    console.log(theme.colors.secondary("    config") + theme.colors.dim("                           Start guided config wizard"));
+    console.log(theme.colors.secondary("    config [subcommand]") + theme.colors.dim("            Configure settings directly"));
+    console.log(theme.colors.secondary("    theme") + theme.colors.dim("                            Start guided theme wizard"));
+    console.log(theme.colors.secondary("    theme [subcommand]") + theme.colors.dim("             Manage themes directly"));
     console.log("");
-    console.log(theme.colors.info("  Examples:"));
+    console.log(theme.colors.info("  Guided Mode:") + theme.colors.accent(" ✨ NEW!"));
+    console.log(theme.colors.dim("    Run any command without arguments to start a step-by-step wizard"));
+    console.log(theme.colors.dim("    that walks you through all options interactively."));
+    console.log("");
+    console.log(theme.colors.info("  Power User Mode:"));
     console.log(theme.colors.dim("    optimize \"Create a REST API\" --style technical"));
     console.log(theme.colors.dim("    analyze \"Write code for auth\" --provider anthropic"));
     console.log(theme.colors.dim("    optimize --compare --providers openai,anthropic \"Explain AI\""));
@@ -199,9 +276,9 @@ function showShellHelp(): void {
     console.log(theme.colors.secondary("    exit") + theme.colors.dim("                             Exit shell (or: quit, q)"));
     console.log("");
     console.log(theme.colors.info("  Pro Tips:"));
+    console.log(theme.colors.dim("    • Type a command without arguments for guided setup"));
     console.log(theme.colors.dim("    • Use arrow keys (↑/↓) for command history"));
     console.log(theme.colors.dim("    • All regular flags work: --provider, --style, --iterations, etc."));
-    console.log(theme.colors.dim("    • Settings are loaded once and persist across commands"));
     console.log(theme.colors.dim("    • Press Ctrl+C twice or type 'exit' to quit"));
     console.log("");
     console.log(theme.colors.dim("═".repeat(80)));
