@@ -22,6 +22,7 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
     // Anthropic models
     "claude-opus-4-5": { input: 15.00, output: 75.00 },
     "claude-sonnet-4-5": { input: 3.00, output: 15.00 },
+    "claude-sonnet-4-0": { input: 3.00, output: 15.00 },
     "claude-sonnet-4": { input: 3.00, output: 15.00 },
     "claude-3-5-sonnet-20241022": { input: 3.00, output: 15.00 },
     "claude-sonnet-4-5-20250929": { input: 3.00, output: 15.00 },
@@ -177,4 +178,28 @@ export function getDefaultModelForProvider(provider: Provider): string {
  */
 export function formatTokens(tokens: number): string {
     return tokens.toLocaleString();
+}
+
+/**
+ * Get detailed pricing breakdown for a model
+ */
+export function getPricingBreakdown(model: string): {
+    model: string;
+    inputPricePer1M: number;
+    outputPricePer1M: number;
+    inputPricePerToken: string;
+    outputPricePerToken: string;
+} | null {
+    const pricing = getModelPricing(model);
+    if (!pricing) {
+        return null;
+    }
+
+    return {
+        model,
+        inputPricePer1M: pricing.input,
+        outputPricePer1M: pricing.output,
+        inputPricePerToken: `$${(pricing.input / 1_000_000).toFixed(9)}`,
+        outputPricePerToken: `$${(pricing.output / 1_000_000).toFixed(9)}`,
+    };
 }

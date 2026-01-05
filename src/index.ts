@@ -13,7 +13,7 @@ import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvid
 import { getDefaultModel } from "./models.js";
 import { themes, getAllThemeNames, isValidTheme, type ThemeName } from "./themes.js";
 import { getCurrentTheme, clearThemeCache } from "./theme-utils.js";
-import { estimateOptimizationCost, estimateAnalysisCost, formatCost, formatTokens, getDefaultModelForProvider, calculateCost } from "./cost.js";
+import { estimateOptimizationCost, estimateAnalysisCost, formatCost, formatTokens, getDefaultModelForProvider, calculateCost, getPricingBreakdown } from "./cost.js";
 
 const program = new Command();
 
@@ -1816,8 +1816,15 @@ async function runComparisonMode(
             }
             const modelForCost = modelToUse || getDefaultModelForProvider(provider);
             const costEstimate = estimateOptimizationCost(original, modelForCost, iterations);
+            const pricingInfo = getPricingBreakdown(modelForCost);
 
             console.log(theme.colors.info(`   ${formatProviderName(provider)}: `) + theme.colors.secondary(formatCost(costEstimate.estimatedCost)) + theme.colors.dim(` (${modelForCost})`));
+
+            if (pricingInfo) {
+                console.log(theme.colors.dim(`      Input:  $${pricingInfo.inputPricePer1M.toFixed(2)}/1M tokens (${pricingInfo.inputPricePerToken}/token)`));
+                console.log(theme.colors.dim(`      Output: $${pricingInfo.outputPricePer1M.toFixed(2)}/1M tokens (${pricingInfo.outputPricePerToken}/token)`));
+            }
+
             totalEstimatedCost += costEstimate.estimatedCost;
         }
 
@@ -2124,6 +2131,26 @@ async function runComparisonMode(
             }
             console.log("");
 
+            // Show pricing details for each provider
+            console.log(theme.colors.info("  📋 Model Pricing Details"));
+            console.log(theme.colors.dim("  ────────────────────────────────────────────────────────────────────────────"));
+            for (const result of successfulResults) {
+                const pricingInfo = getPricingBreakdown(result.model);
+                const providerEmoji = result.provider === "openai" ? "🤖" :
+                                    result.provider === "anthropic" ? "🧠" :
+                                    result.provider === "google" ? "✨" :
+                                    result.provider === "xai" ? "🚀" :
+                                    result.provider === "deepseek" ? "🔮" : "🔧";
+
+                console.log(theme.colors.dim(`     ${providerEmoji} ${formatProviderName(result.provider)} (${result.model}):`));
+                if (pricingInfo) {
+                    console.log(theme.colors.dim(`        Input:  $${pricingInfo.inputPricePer1M.toFixed(2)}/1M tokens ($${pricingInfo.inputPricePerToken}/token)`));
+                    console.log(theme.colors.dim(`        Output: $${pricingInfo.outputPricePer1M.toFixed(2)}/1M tokens ($${pricingInfo.outputPricePerToken}/token)`));
+                }
+                console.log(theme.colors.dim(`        Cost: `) + theme.colors.accent(formatCost(result.actualCost)));
+            }
+            console.log("");
+
             // Show per-iteration cost breakdown if there are multiple iterations
             if (iterations > 1) {
                 console.log(theme.colors.info("  📊 Per-Iteration Cost Breakdown"));
@@ -2271,10 +2298,20 @@ program
                 costEstimate = estimateOptimizationCost(original, modelForCost, iterations);
 
                 if (options.showCost || options.estimateOnly) {
+                    const pricingInfo = getPricingBreakdown(modelForCost);
+
                     console.log("");
                     console.log(theme.colors.primary("💰 Cost Estimate"));
                     console.log(theme.colors.dim("─".repeat(80)));
                     console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(modelForCost));
+
+                    if (pricingInfo) {
+                        console.log(theme.colors.dim(`   Pricing:`));
+                        console.log(theme.colors.dim(`      Input:  $${pricingInfo.inputPricePer1M.toFixed(2)}/1M tokens (${pricingInfo.inputPricePerToken}/token)`));
+                        console.log(theme.colors.dim(`      Output: $${pricingInfo.outputPricePer1M.toFixed(2)}/1M tokens (${pricingInfo.outputPricePerToken}/token)`));
+                        console.log("");
+                    }
+
                     console.log(theme.colors.info(`   Input tokens: `) + theme.colors.secondary(formatTokens(costEstimate.inputTokens)));
                     console.log(theme.colors.info(`   Output tokens (est): `) + theme.colors.secondary(formatTokens(costEstimate.outputTokens)));
                     console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(costEstimate.estimatedCost)));
@@ -2452,11 +2489,17 @@ program
                     if (options.showCost && iterations > 1 && i < iterations) {
                         const actualModel = modelToUse || getDefaultModelForProvider(provider);
                         const nextIterationEstimate = estimateOptimizationCost(optimized, actualModel, 1);
+                        const pricingInfo = getPricingBreakdown(actualModel);
 
                         console.log("");
                         console.log(theme.colors.primary(`💰 Iteration ${i + 1}/${iterations} Cost Estimate`));
                         console.log(theme.colors.dim("─".repeat(80)));
                         console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(actualModel));
+
+                        if (pricingInfo) {
+                            console.log(theme.colors.dim(`   Pricing: $${pricingInfo.inputPricePer1M.toFixed(2)}/1M in, $${pricingInfo.outputPricePer1M.toFixed(2)}/1M out`));
+                        }
+
                         console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(nextIterationEstimate.estimatedCost)));
                         console.log(theme.colors.dim("─".repeat(80)));
                         console.log("");
@@ -2494,10 +2537,19 @@ program
                     const optimizationCost = calculateCost(totalInputTokens, totalOutputTokens, actualModel);
                     const totalCost = optimizationCost + (analyzeInputTokens > 0 ? calculateCost(analyzeInputTokens, analyzeOutputTokens, actualModel) : 0);
 
+                    const pricingInfo = getPricingBreakdown(actualModel);
+
                     console.log("");
                     console.log(theme.colors.primary("💰 Actual Cost"));
                     console.log(theme.colors.dim("─".repeat(80)));
                     console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(actualModel));
+
+                    if (pricingInfo) {
+                        console.log(theme.colors.dim(`   Pricing:`));
+                        console.log(theme.colors.dim(`      Input:  $${pricingInfo.inputPricePer1M.toFixed(2)}/1M tokens ($${pricingInfo.inputPricePerToken}/token)`));
+                        console.log(theme.colors.dim(`      Output: $${pricingInfo.outputPricePer1M.toFixed(2)}/1M tokens ($${pricingInfo.outputPricePerToken}/token)`));
+                        console.log("");
+                    }
 
                     if (analyzeInputTokens > 0) {
                         const analyzeCost = calculateCost(analyzeInputTokens, analyzeOutputTokens, actualModel);
@@ -2607,10 +2659,20 @@ program
             const costEstimate = estimateAnalysisCost(original, modelForCost);
 
             if (options.showCost || options.estimateOnly) {
+                const pricingInfo = getPricingBreakdown(modelForCost);
+
                 console.log("");
                 console.log(theme.colors.primary("💰 Cost Estimate"));
                 console.log(theme.colors.dim("─".repeat(80)));
                 console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(modelForCost));
+
+                if (pricingInfo) {
+                    console.log(theme.colors.dim(`   Pricing:`));
+                    console.log(theme.colors.dim(`      Input:  $${pricingInfo.inputPricePer1M.toFixed(2)}/1M tokens (${pricingInfo.inputPricePerToken}/token)`));
+                    console.log(theme.colors.dim(`      Output: $${pricingInfo.outputPricePer1M.toFixed(2)}/1M tokens (${pricingInfo.outputPricePerToken}/token)`));
+                    console.log("");
+                }
+
                 console.log(theme.colors.info(`   Input tokens: `) + theme.colors.secondary(formatTokens(costEstimate.inputTokens)));
                 console.log(theme.colors.info(`   Output tokens (est): `) + theme.colors.secondary(formatTokens(costEstimate.outputTokens)));
                 console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(costEstimate.estimatedCost)));
@@ -2691,10 +2753,19 @@ program
             if (options.showCost) {
                 const actualModel = modelToUse || getDefaultModelForProvider(provider);
                 const actualCost = calculateCost(analysisResult.usage.inputTokens, analysisResult.usage.outputTokens, actualModel);
+                const pricingInfo = getPricingBreakdown(actualModel);
 
                 console.log(theme.colors.primary("💰 Actual Cost"));
                 console.log(theme.colors.dim("─".repeat(80)));
                 console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(actualModel));
+
+                if (pricingInfo) {
+                    console.log(theme.colors.dim(`   Pricing:`));
+                    console.log(theme.colors.dim(`      Input:  $${pricingInfo.inputPricePer1M.toFixed(2)}/1M tokens ($${pricingInfo.inputPricePerToken}/token)`));
+                    console.log(theme.colors.dim(`      Output: $${pricingInfo.outputPricePer1M.toFixed(2)}/1M tokens ($${pricingInfo.outputPricePerToken}/token)`));
+                    console.log("");
+                }
+
                 console.log(theme.colors.info(`   Input tokens: `) + theme.colors.secondary(formatTokens(analysisResult.usage.inputTokens)));
                 console.log(theme.colors.info(`   Output tokens: `) + theme.colors.secondary(formatTokens(analysisResult.usage.outputTokens)));
                 console.log(theme.colors.info(`   Actual cost: `) + theme.colors.accent(formatCost(actualCost)));
