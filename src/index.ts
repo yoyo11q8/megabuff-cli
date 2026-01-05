@@ -13,6 +13,7 @@ import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvid
 import { getDefaultModel } from "./models.js";
 import { themes, getAllThemeNames, isValidTheme, type ThemeName } from "./themes.js";
 import { getCurrentTheme, clearThemeCache } from "./theme-utils.js";
+import { estimateOptimizationCost, estimateAnalysisCost, formatCost, formatTokens, getDefaultModelForProvider, calculateCost } from "./cost.js";
 
 const program = new Command();
 
@@ -294,6 +295,22 @@ IMPORTANT: This model supports vision capabilities. When optimizing:
 }
 
 /**
+ * Token usage information returned from API calls
+ */
+interface TokenUsage {
+    inputTokens: number;
+    outputTokens: number;
+}
+
+/**
+ * Result from optimization/analysis including token usage
+ */
+interface ResultWithUsage {
+    result: string;
+    usage: TokenUsage;
+}
+
+/**
  * Optimize a prompt using OpenAI
  */
 async function optimizePromptOpenAI(
@@ -302,7 +319,7 @@ async function optimizePromptOpenAI(
     model?: string,
     style: OptimizationStyle = "balanced",
     customPrompt?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     const openai = new OpenAI({ apiKey });
     const selectedModel = model ?? getDefaultModel("openai");
     const systemPrompt = getSystemPrompt("openai", selectedModel, style, customPrompt);
@@ -318,8 +335,18 @@ async function optimizePromptOpenAI(
             temperature: 0.7,
         });
 
-        debugLog("openai.request.done", { choices: response.choices?.length });
-        return response.choices[0]?.message?.content || "Error: No response from OpenAI";
+        debugLog("openai.request.done", {
+            choices: response.choices?.length,
+            usage: response.usage
+        });
+
+        const result = response.choices[0]?.message?.content || "Error: No response from OpenAI";
+        const usage: TokenUsage = {
+            inputTokens: response.usage?.prompt_tokens || 0,
+            outputTokens: response.usage?.completion_tokens || 0
+        };
+
+        return { result, usage };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`OpenAI API error: ${error.message}`);
@@ -337,7 +364,7 @@ async function optimizePromptAnthropic(
     model?: string,
     style: OptimizationStyle = "balanced",
     customPrompt?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     const anthropic = new Anthropic({ apiKey });
     const selectedModel = model ?? getDefaultModel("anthropic");
     const systemPrompt = getSystemPrompt("anthropic", selectedModel, style, customPrompt);
@@ -356,10 +383,18 @@ async function optimizePromptAnthropic(
             ]
         });
 
-        debugLog("anthropic.request.done", { contentItems: response.content?.length });
+        debugLog("anthropic.request.done", {
+            contentItems: response.content?.length,
+            usage: response.usage
+        });
+
         const content = response.content?.[0];
         if (content?.type === "text") {
-            return content.text;
+            const usage: TokenUsage = {
+                inputTokens: response.usage.input_tokens,
+                outputTokens: response.usage.output_tokens
+            };
+            return { result: content.text, usage };
         }
 
         throw new Error("Unexpected response format from Anthropic API");
@@ -380,7 +415,7 @@ async function optimizePromptGemini(
     modelName?: string,
     style: OptimizationStyle = "balanced",
     customPrompt?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     const genAI = new GoogleGenerativeAI(apiKey);
     const selectedModel = modelName ?? getDefaultModel("google");
     const systemPrompt = getSystemPrompt("google", selectedModel, style, customPrompt);
@@ -396,13 +431,23 @@ async function optimizePromptGemini(
         const response = result.response;
         const text = response.text();
 
-        debugLog("gemini.request.done", { responseLength: text.length });
+        // Extract token usage from response
+        const usageMetadata = response.usageMetadata;
+        const usage: TokenUsage = {
+            inputTokens: usageMetadata?.promptTokenCount || 0,
+            outputTokens: usageMetadata?.candidatesTokenCount || 0
+        };
+
+        debugLog("gemini.request.done", {
+            responseLength: text.length,
+            usage
+        });
 
         if (!text) {
             throw new Error("No response from Gemini API");
         }
 
-        return text;
+        return { result: text, usage };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`Gemini API error: ${error.message}`);
@@ -420,7 +465,7 @@ async function optimizePromptXAI(
     modelName?: string,
     style: OptimizationStyle = "balanced",
     customPrompt?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     const selectedModel = modelName ?? getDefaultModel("xai");
     const systemPrompt = getSystemPrompt("xai", selectedModel, style, customPrompt);
 
@@ -438,13 +483,22 @@ async function optimizePromptXAI(
                 prompt: `Optimize this prompt:\n\n${prompt}`,
             });
 
-            debugLog("xai.request.done", { textLength: result.text.length });
+            // Extract token usage from ai SDK response
+            const usage: TokenUsage = {
+                inputTokens: result.usage?.promptTokens || 0,
+                outputTokens: result.usage?.completionTokens || 0
+            };
+
+            debugLog("xai.request.done", {
+                textLength: result.text.length,
+                usage
+            });
 
             if (!result.text) {
                 throw new Error("No response from xAI API");
             }
 
-            return result.text;
+            return { result: result.text, usage };
         } finally {
             // Restore original environment variable
             if (originalKey !== undefined) {
@@ -470,7 +524,7 @@ async function optimizePromptDeepSeek(
     modelName?: string,
     style: OptimizationStyle = "balanced",
     customPrompt?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     // DeepSeek uses OpenAI-compatible API
     const openai = new OpenAI({
         apiKey: apiKey,
@@ -495,14 +549,22 @@ async function optimizePromptDeepSeek(
             ]
         });
 
-        debugLog("deepseek.request.done", { choices: response.choices?.length });
         const content = response.choices[0]?.message?.content;
+        const usage: TokenUsage = {
+            inputTokens: response.usage?.prompt_tokens || 0,
+            outputTokens: response.usage?.completion_tokens || 0
+        };
+
+        debugLog("deepseek.request.done", {
+            choices: response.choices?.length,
+            usage
+        });
 
         if (!content) {
             throw new Error("No response from DeepSeek API");
         }
 
-        return content;
+        return { result: content, usage };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`DeepSeek API error: ${error.message}`);
@@ -547,7 +609,7 @@ async function analyzePromptOpenAI(
     prompt: string,
     apiKey: string,
     model?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     const openai = new OpenAI({ apiKey });
     const selectedModel = model ?? getDefaultModel("openai");
     const systemPrompt = getAnalysisSystemPrompt();
@@ -563,8 +625,18 @@ async function analyzePromptOpenAI(
             temperature: 0.7,
         });
 
-        debugLog("openai.analyze.done", { choices: response.choices?.length });
-        return response.choices[0]?.message?.content || "Error: No response from OpenAI";
+        const result = response.choices[0]?.message?.content || "Error: No response from OpenAI";
+        const usage: TokenUsage = {
+            inputTokens: response.usage?.prompt_tokens || 0,
+            outputTokens: response.usage?.completion_tokens || 0
+        };
+
+        debugLog("openai.analyze.done", {
+            choices: response.choices?.length,
+            usage
+        });
+
+        return { result, usage };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`OpenAI API error: ${error.message}`);
@@ -580,7 +652,7 @@ async function analyzePromptAnthropic(
     prompt: string,
     apiKey: string,
     model?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     const anthropic = new Anthropic({ apiKey });
     const selectedModel = model ?? getDefaultModel("anthropic");
     const systemPrompt = getAnalysisSystemPrompt();
@@ -599,10 +671,18 @@ async function analyzePromptAnthropic(
             ]
         });
 
-        debugLog("anthropic.analyze.done", { contentItems: response.content?.length });
+        debugLog("anthropic.analyze.done", {
+            contentItems: response.content?.length,
+            usage: response.usage
+        });
+
         const content = response.content?.[0];
         if (content?.type === "text") {
-            return content.text;
+            const usage: TokenUsage = {
+                inputTokens: response.usage.input_tokens,
+                outputTokens: response.usage.output_tokens
+            };
+            return { result: content.text, usage };
         }
 
         throw new Error("Unexpected response format from Anthropic API");
@@ -621,7 +701,7 @@ async function analyzePromptGemini(
     prompt: string,
     apiKey: string,
     model?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     const selectedModel = model ?? getDefaultModel("google");
     const systemPrompt = getAnalysisSystemPrompt();
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -633,8 +713,18 @@ async function analyzePromptGemini(
         const response = result.response;
         const text = response.text();
 
-        debugLog("google.analyze.done", { responseLength: text.length });
-        return text;
+        const usageMetadata = response.usageMetadata;
+        const usage: TokenUsage = {
+            inputTokens: usageMetadata?.promptTokenCount || 0,
+            outputTokens: usageMetadata?.candidatesTokenCount || 0
+        };
+
+        debugLog("google.analyze.done", {
+            responseLength: text.length,
+            usage
+        });
+
+        return { result: text, usage };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`Google Gemini API error: ${error.message}`);
@@ -650,7 +740,7 @@ async function analyzePromptXAI(
     prompt: string,
     apiKey: string,
     model?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     const selectedModel = model ?? getDefaultModel("xai");
     const systemPrompt = getAnalysisSystemPrompt();
 
@@ -668,13 +758,21 @@ async function analyzePromptXAI(
                 prompt: `Analyze this prompt:\n\n${prompt}`,
             });
 
-            debugLog("xai.analyze.done", { textLength: result.text.length });
+            const usage: TokenUsage = {
+                inputTokens: result.usage?.promptTokens || 0,
+                outputTokens: result.usage?.completionTokens || 0
+            };
+
+            debugLog("xai.analyze.done", {
+                textLength: result.text.length,
+                usage
+            });
 
             if (!result.text) {
                 throw new Error("No response from xAI API");
             }
 
-            return result.text;
+            return { result: result.text, usage };
         } finally {
             // Restore original environment variable
             if (originalKey !== undefined) {
@@ -698,7 +796,7 @@ async function analyzePromptDeepSeek(
     prompt: string,
     apiKey: string,
     model?: string
-): Promise<string> {
+): Promise<ResultWithUsage> {
     const openai = new OpenAI({
         apiKey,
         baseURL: "https://api.deepseek.com"
@@ -717,8 +815,18 @@ async function analyzePromptDeepSeek(
             temperature: 0.7,
         });
 
-        debugLog("deepseek.analyze.done", { choices: response.choices?.length });
-        return response.choices[0]?.message?.content || "Error: No response from DeepSeek";
+        const result = response.choices[0]?.message?.content || "Error: No response from DeepSeek";
+        const usage: TokenUsage = {
+            inputTokens: response.usage?.prompt_tokens || 0,
+            outputTokens: response.usage?.completion_tokens || 0
+        };
+
+        debugLog("deepseek.analyze.done", {
+            choices: response.choices?.length,
+            usage
+        });
+
+        return { result, usage };
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`DeepSeek API error: ${error.message}`);
@@ -744,6 +852,7 @@ function createSpinner(message: string) {
     let i = 0;
     let timer: NodeJS.Timeout | undefined;
     let lastLen = 0;
+    let currentMessage = message;
 
     const render = (text: string) => {
         const frame = theme.colors.primary(frames[i++ % frames.length]);
@@ -756,14 +865,19 @@ function createSpinner(message: string) {
     return {
         start() {
             if (!enabled) return;
-            render(message);
-            timer = setInterval(() => render(message), 80);
+            render(currentMessage);
+            timer = setInterval(() => render(currentMessage), 80);
+        },
+        update(newMessage: string) {
+            if (!enabled) return;
+            currentMessage = newMessage;
+            render(currentMessage);
         },
         stop(finalText?: string) {
             if (!enabled) return;
             if (timer) clearInterval(timer);
             timer = undefined;
-            const text = finalText ?? message;
+            const text = finalText ?? currentMessage;
             const padded = theme.colors.success(`✓ ${text}`) + " ".repeat(Math.max(0, lastLen - text.length));
             process.stderr.write(`\r${padded}\n`);
         },
@@ -771,7 +885,7 @@ function createSpinner(message: string) {
             if (!enabled) return;
             if (timer) clearInterval(timer);
             timer = undefined;
-            const text = finalText ?? message;
+            const text = finalText ?? currentMessage;
             const padded = theme.colors.error(`✗ ${text}`) + " ".repeat(Math.max(0, lastLen - text.length));
             process.stderr.write(`\r${padded}\n`);
         }
@@ -1630,8 +1744,58 @@ async function runComparisonMode(
     console.log(theme.colors.dim(`  Testing ${availableProviders.length} providers: ${availableProviders.map(formatProviderName).join(", ")}`));
     console.log("");
 
+    // Show cost estimate for comparison mode if requested
+    if (options.showCost) {
+        console.log(theme.colors.primary("💰 Cost Estimate (All Providers)"));
+        console.log(theme.colors.dim("─".repeat(80)));
+
+        let totalEstimatedCost = 0;
+        for (const provider of availableProviders) {
+            const configuredModel = await getModel();
+            const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+            const modelForCost = modelToUse || getDefaultModelForProvider(provider);
+            const costEstimate = estimateOptimizationCost(original, modelForCost, iterations);
+
+            console.log(theme.colors.info(`   ${formatProviderName(provider)}: `) + theme.colors.secondary(formatCost(costEstimate.estimatedCost)) + theme.colors.dim(` (${modelForCost})`));
+            totalEstimatedCost += costEstimate.estimatedCost;
+        }
+
+        console.log(theme.colors.dim("─".repeat(80)));
+        console.log(theme.colors.info(`   Total estimated cost: `) + theme.colors.accent(formatCost(totalEstimatedCost)));
+        console.log(theme.colors.dim("─".repeat(80)));
+        console.log("");
+
+        // Prompt user to confirm proceeding
+        if (process.stdin.isTTY && process.stdout.isTTY) {
+            const rl = readline.createInterface({
+                input: process.stdin,
+                output: process.stdout
+            });
+
+            const answer = await rl.question(theme.colors.warning("Do you want to proceed with this operation? (y/n): "));
+            rl.close();
+
+            if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+                console.log("");
+                console.log(theme.colors.dim("Operation cancelled."));
+                console.log("");
+                return;
+            }
+            console.log("");
+        }
+    }
+
     // Run optimization for each provider in parallel
-    const results: Array<{ provider: Provider; result: string; duration: number; error?: string }> = [];
+    const results: Array<{
+        provider: Provider;
+        result: string;
+        duration: number;
+        error?: string;
+        totalInputTokens: number;
+        totalOutputTokens: number;
+        actualCost: number;
+        model: string;
+    }> = [];
 
     await Promise.all(
         availableProviders.map(async (provider) => {
@@ -1641,6 +1805,8 @@ async function runComparisonMode(
 
             const startTime = Date.now();
             let optimized = original;
+            let totalInputTokens = 0;
+            let totalOutputTokens = 0;
 
             try {
                 const apiKey = providerKeys[provider];
@@ -1649,41 +1815,127 @@ async function runComparisonMode(
 
                 // Run iterations for this provider
                 for (let i = 0; i < iterations; i++) {
+                    // Update spinner to show current iteration
+                    if (iterations > 1) {
+                        spinner.update(`${providerEmoji} ${formatProviderName(provider)} - iteration ${i + 1}/${iterations}...`);
+                    }
+
+                    let response: ResultWithUsage;
+
                     if (provider === "openai") {
-                        optimized = await optimizePromptOpenAI(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptOpenAI(optimized, apiKey, modelToUse, style, customPrompt);
                     } else if (provider === "anthropic") {
-                        optimized = await optimizePromptAnthropic(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptAnthropic(optimized, apiKey, modelToUse, style, customPrompt);
                     } else if (provider === "google") {
-                        optimized = await optimizePromptGemini(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptGemini(optimized, apiKey, modelToUse, style, customPrompt);
                     } else if (provider === "xai") {
-                        optimized = await optimizePromptXAI(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptXAI(optimized, apiKey, modelToUse, style, customPrompt);
                     } else if (provider === "deepseek") {
-                        optimized = await optimizePromptDeepSeek(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptDeepSeek(optimized, apiKey, modelToUse, style, customPrompt);
+                    } else {
+                        throw new Error(`Unsupported provider: ${provider}`);
+                    }
+
+                    optimized = response.result;
+                    totalInputTokens += response.usage.inputTokens;
+                    totalOutputTokens += response.usage.outputTokens;
+
+                    const actualModel = modelToUse || getDefaultModelForProvider(provider);
+                    const iterationCost = calculateCost(response.usage.inputTokens, response.usage.outputTokens, actualModel);
+
+                    // Stop spinner temporarily for iteration results
+                    if (iterations > 1) {
+                        spinner.stop();
                     }
 
                     // Show iteration output if verbose mode is enabled
                     if (options.verbose && iterations > 1) {
-                        spinner.stop();
                         console.log("");
                         console.log(theme.colors.primary(`📝 ${formatProviderName(provider)} - Iteration ${i + 1}/${iterations} Output:`));
                         console.log(theme.colors.dim("─".repeat(80)));
                         console.log(optimized);
                         console.log(theme.colors.dim("─".repeat(80)));
                         console.log("");
+                    }
+
+                    // Show cost for this iteration if --show-cost is enabled
+                    if (options.showCost && iterations > 1) {
+                        console.log("");
+                        console.log(theme.colors.primary(`💰 ${formatProviderName(provider)} - Iteration ${i + 1}/${iterations} Actual Cost`));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log(theme.colors.info(`   Input tokens: `) + theme.colors.secondary(formatTokens(response.usage.inputTokens)));
+                        console.log(theme.colors.info(`   Output tokens: `) + theme.colors.secondary(formatTokens(response.usage.outputTokens)));
+                        console.log(theme.colors.info(`   Cost: `) + theme.colors.accent(formatCost(iterationCost)));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log("");
+                    }
+
+                    // Show cost estimate for NEXT iteration and prompt for confirmation (if not the last iteration)
+                    if (options.showCost && iterations > 1 && i < iterations - 1) {
+                        const nextIterationEstimate = estimateOptimizationCost(optimized, actualModel, 1);
+
+                        console.log("");
+                        console.log(theme.colors.primary(`💰 ${formatProviderName(provider)} - Iteration ${i + 2}/${iterations} Cost Estimate`));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(actualModel));
+                        console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(nextIterationEstimate.estimatedCost)));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log("");
+
+                        // Prompt user to confirm proceeding with next iteration
+                        if (process.stdin.isTTY && process.stdout.isTTY) {
+                            const rl = readline.createInterface({
+                                input: process.stdin,
+                                output: process.stdout
+                            });
+
+                            const answer = await rl.question(theme.colors.warning(`${formatProviderName(provider)}: Continue with iteration ${i + 2}/${iterations}? (y/n): `));
+                            rl.close();
+
+                            if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+                                console.log("");
+                                console.log(theme.colors.dim(`${formatProviderName(provider)}: Stopped after ${i + 1} iteration(s).`));
+                                console.log("");
+                                break;
+                            }
+                            console.log("");
+                        }
+                    }
+
+                    // Restart spinner for next iteration
+                    if (iterations > 1 && i < iterations - 1) {
                         spinner.start();
                     }
                 }
 
                 const duration = Date.now() - startTime;
+                const actualModel = modelToUse || getDefaultModelForProvider(provider);
+                const actualCost = calculateCost(totalInputTokens, totalOutputTokens, actualModel);
+
                 spinner.stop(`✨ ${formatProviderName(provider)} complete in ${(duration / 1000).toFixed(1)}s`);
-                results.push({ provider, result: optimized, duration });
+                results.push({
+                    provider,
+                    result: optimized,
+                    duration,
+                    totalInputTokens,
+                    totalOutputTokens,
+                    actualCost,
+                    model: actualModel
+                });
             } catch (error) {
                 const duration = Date.now() - startTime;
+                const configuredModel = await getModel();
+                const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+                const actualModel = modelToUse || getDefaultModelForProvider(provider);
                 spinner.fail(`❌ ${formatProviderName(provider)} failed`);
                 results.push({
                     provider,
                     result: "",
                     duration,
+                    totalInputTokens: 0,
+                    totalOutputTokens: 0,
+                    actualCost: 0,
+                    model: actualModel,
                     error: error instanceof Error ? error.message : String(error)
                 });
             }
@@ -1699,11 +1951,14 @@ async function runComparisonMode(
     console.log(theme.colors.dim("─".repeat(80)));
     console.log("");
 
-    for (const { provider, result, duration, error } of results) {
+    for (const { provider, result, duration, error, totalInputTokens, totalOutputTokens, actualCost, model } of results) {
         const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
 
-        console.log(theme.colors.secondary(`${providerEmoji} ${formatProviderName(provider).toUpperCase()}`));
+        console.log(theme.colors.secondary(`${providerEmoji} ${formatProviderName(provider).toUpperCase()}`) + theme.colors.dim(` (${model})`));
         console.log(theme.colors.dim(`   Duration: ${(duration / 1000).toFixed(1)}s | Length: ${result.length} chars`));
+        if (!error) {
+            console.log(theme.colors.dim(`   Tokens: ${formatTokens(totalInputTokens)} in + ${formatTokens(totalOutputTokens)} out | Cost: ${formatCost(actualCost)}`));
+        }
         console.log("");
 
         if (error) {
@@ -1723,11 +1978,13 @@ async function runComparisonMode(
     if (successfulResults.length > 0) {
         const avgDuration = successfulResults.reduce((sum, r) => sum + r.duration, 0) / successfulResults.length;
         const avgLength = successfulResults.reduce((sum, r) => sum + r.result.length, 0) / successfulResults.length;
+        const totalCost = successfulResults.reduce((sum, r) => sum + r.actualCost, 0);
 
         console.log(theme.colors.primary("📈 Summary"));
         console.log(theme.colors.dim(`   Successful: ${successfulResults.length}/${results.length} providers`));
         console.log(theme.colors.dim(`   Average duration: ${(avgDuration / 1000).toFixed(1)}s`));
         console.log(theme.colors.dim(`   Average length: ${Math.round(avgLength)} chars`));
+        console.log(theme.colors.dim(`   Total cost: ${formatCost(totalCost)}`));
         console.log("");
     }
 
@@ -1754,6 +2011,8 @@ program
     .option("--providers <providers>", "Comma-separated list of providers to compare (e.g., 'openai,anthropic,google')")
     .option("-v, --verbose", "Show output from each iteration (useful with --iterations)")
     .option("-a, --analyze-first", "Analyze the prompt before optimizing to see what will be improved")
+    .option("--show-cost", "Display estimated cost before running and actual cost after")
+    .option("--estimate-only", "Only show cost estimate without running optimization")
     .action(async (inlinePrompt, options) => {
         try {
             debugLog("optimize.invoked", {
@@ -1838,7 +2097,53 @@ program
                 debugLog("iterations.enabled", { count: iterations });
             }
 
+            // Cost estimation (only for non-comparison mode)
+            let costEstimate: { inputTokens: number; outputTokens: number; estimatedCost: number } | undefined;
+            if (!options.compare) {
+                const modelForCost = modelToUse || getDefaultModelForProvider(provider);
+                costEstimate = estimateOptimizationCost(original, modelForCost, iterations);
+
+                if (options.showCost || options.estimateOnly) {
+                    console.log("");
+                    console.log(theme.colors.primary("💰 Cost Estimate"));
+                    console.log(theme.colors.dim("─".repeat(80)));
+                    console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(modelForCost));
+                    console.log(theme.colors.info(`   Input tokens: `) + theme.colors.secondary(formatTokens(costEstimate.inputTokens)));
+                    console.log(theme.colors.info(`   Output tokens (est): `) + theme.colors.secondary(formatTokens(costEstimate.outputTokens)));
+                    console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(costEstimate.estimatedCost)));
+                    console.log(theme.colors.dim("─".repeat(80)));
+                    console.log("");
+
+                    if (options.estimateOnly) {
+                        console.log(theme.colors.dim("💡 Tip: Remove --estimate-only to run the actual optimization"));
+                        console.log("");
+                        return;
+                    }
+
+                    // Prompt user to confirm proceeding with the operation
+                    if (process.stdin.isTTY && process.stdout.isTTY) {
+                        const rl = readline.createInterface({
+                            input: process.stdin,
+                            output: process.stdout
+                        });
+
+                        const answer = await rl.question(theme.colors.warning("Do you want to proceed with this operation? (y/n): "));
+                        rl.close();
+
+                        if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+                            console.log("");
+                            console.log(theme.colors.dim("Operation cancelled."));
+                            console.log("");
+                            return;
+                        }
+                        console.log("");
+                    }
+                }
+            }
+
             // Analyze first mode: show analysis before optimizing
+            let analyzeInputTokens = 0;
+            let analyzeOutputTokens = 0;
             if (options.analyzeFirst) {
                 console.log("");
                 console.log(theme.colors.primary("🔍 Step 1: Analyzing your prompt..."));
@@ -1848,19 +2153,19 @@ program
                 analyzeSpinner.start();
 
                 const analyzeStart = Date.now();
-                let analysis: string;
+                let analysisResult: ResultWithUsage;
 
                 try {
                     if (provider === "openai") {
-                        analysis = await analyzePromptOpenAI(original, apiKey, modelToUse);
+                        analysisResult = await analyzePromptOpenAI(original, apiKey, modelToUse);
                     } else if (provider === "anthropic") {
-                        analysis = await analyzePromptAnthropic(original, apiKey, modelToUse);
+                        analysisResult = await analyzePromptAnthropic(original, apiKey, modelToUse);
                     } else if (provider === "google") {
-                        analysis = await analyzePromptGemini(original, apiKey, modelToUse);
+                        analysisResult = await analyzePromptGemini(original, apiKey, modelToUse);
                     } else if (provider === "xai") {
-                        analysis = await analyzePromptXAI(original, apiKey, modelToUse);
+                        analysisResult = await analyzePromptXAI(original, apiKey, modelToUse);
                     } else if (provider === "deepseek") {
-                        analysis = await analyzePromptDeepSeek(original, apiKey, modelToUse);
+                        analysisResult = await analyzePromptDeepSeek(original, apiKey, modelToUse);
                     } else {
                         analyzeSpinner.fail();
                         console.error("");
@@ -1869,13 +2174,16 @@ program
                         process.exit(1);
                     }
 
+                    analyzeInputTokens = analysisResult.usage.inputTokens;
+                    analyzeOutputTokens = analysisResult.usage.outputTokens;
+
                     const analyzeDuration = ((Date.now() - analyzeStart) / 1000).toFixed(1);
                     analyzeSpinner.stop(`Analysis complete in ${analyzeDuration}s`);
 
                     console.log("");
                     console.log(theme.colors.dim("─".repeat(80)));
                     console.log("");
-                    console.log(analysis);
+                    console.log(analysisResult.result);
                     console.log("");
                     console.log(theme.colors.dim("─".repeat(80)));
                     console.log("");
@@ -1901,6 +2209,8 @@ program
             const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
 
             let optimized: string = original;
+            let totalInputTokens = 0;
+            let totalOutputTokens = 0;
             const t0 = Date.now();
 
             try {
@@ -1911,18 +2221,18 @@ program
                     spinner.start();
 
                     const iterationStart = Date.now();
-                    let currentResult: string;
+                    let response: ResultWithUsage;
 
                     if (provider === "openai") {
-                        currentResult = await optimizePromptOpenAI(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptOpenAI(optimized, apiKey, modelToUse, style, customPrompt);
                     } else if (provider === "anthropic") {
-                        currentResult = await optimizePromptAnthropic(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptAnthropic(optimized, apiKey, modelToUse, style, customPrompt);
                     } else if (provider === "google") {
-                        currentResult = await optimizePromptGemini(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptGemini(optimized, apiKey, modelToUse, style, customPrompt);
                     } else if (provider === "xai") {
-                        currentResult = await optimizePromptXAI(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptXAI(optimized, apiKey, modelToUse, style, customPrompt);
                     } else if (provider === "deepseek") {
-                        currentResult = await optimizePromptDeepSeek(optimized, apiKey, modelToUse, style, customPrompt);
+                        response = await optimizePromptDeepSeek(optimized, apiKey, modelToUse, style, customPrompt);
                     } else {
                         spinner.fail();
                         console.error("");
@@ -1933,8 +2243,12 @@ program
                         process.exit(1);
                     }
 
+                    optimized = response.result;
+                    totalInputTokens += response.usage.inputTokens;
+                    totalOutputTokens += response.usage.outputTokens;
+
                     const iterationDuration = ((Date.now() - iterationStart) / 1000).toFixed(1);
-                    debugLog("optimize.iteration.done", { provider, iteration: i, ms: Date.now() - iterationStart, length: currentResult.length });
+                    debugLog("optimize.iteration.done", { provider, iteration: i, ms: Date.now() - iterationStart, length: optimized.length });
 
                     if (iterations > 1) {
                         spinner.stop(`✨ Iteration ${i}/${iterations} complete in ${iterationDuration}s`);
@@ -1942,17 +2256,63 @@ program
                         spinner.stop(`✨ Optimization complete in ${iterationDuration}s!`);
                     }
 
+                    // Show cost for this iteration if --show-cost is enabled
+                    if (options.showCost && iterations > 1) {
+                        const actualModel = modelToUse || getDefaultModelForProvider(provider);
+                        const iterationCost = calculateCost(response.usage.inputTokens, response.usage.outputTokens, actualModel);
+
+                        console.log("");
+                        console.log(theme.colors.primary(`💰 Iteration ${i}/${iterations} Actual Cost`));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log(theme.colors.info(`   Input tokens: `) + theme.colors.secondary(formatTokens(response.usage.inputTokens)));
+                        console.log(theme.colors.info(`   Output tokens: `) + theme.colors.secondary(formatTokens(response.usage.outputTokens)));
+                        console.log(theme.colors.info(`   Cost: `) + theme.colors.accent(formatCost(iterationCost)));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log("");
+                    }
+
                     // Show iteration output if verbose mode is enabled
                     if (options.verbose && iterations > 1) {
                         console.log("");
                         console.log(theme.colors.primary(`📝 Iteration ${i}/${iterations} Output:`));
                         console.log(theme.colors.dim("─".repeat(80)));
-                        console.log(currentResult);
+                        console.log(optimized);
                         console.log(theme.colors.dim("─".repeat(80)));
                         console.log("");
                     }
 
-                    optimized = currentResult;
+                    // Show cost estimate for NEXT iteration and prompt for confirmation (if not the last iteration)
+                    if (options.showCost && iterations > 1 && i < iterations) {
+                        const actualModel = modelToUse || getDefaultModelForProvider(provider);
+                        const nextIterationEstimate = estimateOptimizationCost(optimized, actualModel, 1);
+
+                        console.log("");
+                        console.log(theme.colors.primary(`💰 Iteration ${i + 1}/${iterations} Cost Estimate`));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(actualModel));
+                        console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(nextIterationEstimate.estimatedCost)));
+                        console.log(theme.colors.dim("─".repeat(80)));
+                        console.log("");
+
+                        // Prompt user to confirm proceeding with next iteration
+                        if (process.stdin.isTTY && process.stdout.isTTY) {
+                            const rl = readline.createInterface({
+                                input: process.stdin,
+                                output: process.stdout
+                            });
+
+                            const answer = await rl.question(theme.colors.warning(`Continue with iteration ${i + 1}/${iterations}? (y/n): `));
+                            rl.close();
+
+                            if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+                                console.log("");
+                                console.log(theme.colors.dim(`Stopped after ${i} iteration(s).`));
+                                console.log("");
+                                break;
+                            }
+                            console.log("");
+                        }
+                    }
                 }
 
                 const totalDuration = ((Date.now() - t0) / 1000).toFixed(1);
@@ -1960,6 +2320,42 @@ program
                     console.log(theme.colors.success(`🎉 All ${iterations} iterations complete in ${totalDuration}s!`));
                 }
                 debugLog("optimize.done", { provider, iterations, totalMs: Date.now() - t0, finalLength: optimized.length });
+
+                // Display actual cost if requested
+                if (options.showCost) {
+                    const actualModel = modelToUse || getDefaultModelForProvider(provider);
+                    const optimizationCost = calculateCost(totalInputTokens, totalOutputTokens, actualModel);
+                    const totalCost = optimizationCost + (analyzeInputTokens > 0 ? calculateCost(analyzeInputTokens, analyzeOutputTokens, actualModel) : 0);
+
+                    console.log("");
+                    console.log(theme.colors.primary("💰 Actual Cost"));
+                    console.log(theme.colors.dim("─".repeat(80)));
+                    console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(actualModel));
+
+                    if (analyzeInputTokens > 0) {
+                        const analyzeCost = calculateCost(analyzeInputTokens, analyzeOutputTokens, actualModel);
+                        console.log(theme.colors.info(`   Analysis tokens: `) + theme.colors.secondary(`${formatTokens(analyzeInputTokens)} in + ${formatTokens(analyzeOutputTokens)} out`));
+                        console.log(theme.colors.info(`   Analysis cost: `) + theme.colors.secondary(formatCost(analyzeCost)));
+                    }
+
+                    console.log(theme.colors.info(`   Optimization tokens: `) + theme.colors.secondary(`${formatTokens(totalInputTokens)} in + ${formatTokens(totalOutputTokens)} out`));
+                    console.log(theme.colors.info(`   Optimization cost: `) + theme.colors.secondary(formatCost(optimizationCost)));
+
+                    if (analyzeInputTokens > 0) {
+                        console.log(theme.colors.info(`   Total cost: `) + theme.colors.accent(formatCost(totalCost)));
+                    } else {
+                        console.log(theme.colors.info(`   Total cost: `) + theme.colors.accent(formatCost(optimizationCost)));
+                    }
+
+                    // Show comparison with estimate
+                    if (costEstimate) {
+                        const accuracy = ((costEstimate.estimatedCost / (analyzeInputTokens > 0 ? totalCost : optimizationCost)) * 100).toFixed(1);
+                        console.log(theme.colors.dim(`   Estimate accuracy: ${accuracy}%`));
+                    }
+
+                    console.log(theme.colors.dim("─".repeat(80)));
+                    console.log("");
+                }
             } catch (e) {
                 debugLog("optimize.error", { provider, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e) });
                 console.error("");
@@ -1985,6 +2381,8 @@ program
     .option("--no-copy", "Don't copy analysis to clipboard (copy is default)")
     .option("-k, --api-key <key>", "Provider API key/token (overrides saved config)")
     .option("-p, --provider <provider>", `Provider (${PROVIDERS.join(", ")})`)
+    .option("--show-cost", "Display estimated cost before running")
+    .option("--estimate-only", "Only show cost estimate without running analysis")
     .action(async (inlinePrompt, options) => {
         try {
             debugLog("analyze.invoked", {
@@ -2037,6 +2435,47 @@ program
             const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
             debugLog("model.selected", { configuredModel, modelToUse, provider });
 
+            // Cost estimation
+            const modelForCost = modelToUse || getDefaultModelForProvider(provider);
+            const costEstimate = estimateAnalysisCost(original, modelForCost);
+
+            if (options.showCost || options.estimateOnly) {
+                console.log("");
+                console.log(theme.colors.primary("💰 Cost Estimate"));
+                console.log(theme.colors.dim("─".repeat(80)));
+                console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(modelForCost));
+                console.log(theme.colors.info(`   Input tokens: `) + theme.colors.secondary(formatTokens(costEstimate.inputTokens)));
+                console.log(theme.colors.info(`   Output tokens (est): `) + theme.colors.secondary(formatTokens(costEstimate.outputTokens)));
+                console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(costEstimate.estimatedCost)));
+                console.log(theme.colors.dim("─".repeat(80)));
+                console.log("");
+
+                if (options.estimateOnly) {
+                    console.log(theme.colors.dim("💡 Tip: Remove --estimate-only to run the actual analysis"));
+                    console.log("");
+                    return;
+                }
+
+                // Prompt user to confirm proceeding with the operation
+                if (process.stdin.isTTY && process.stdout.isTTY) {
+                    const rl = readline.createInterface({
+                        input: process.stdin,
+                        output: process.stdout
+                    });
+
+                    const answer = await rl.question(theme.colors.warning("Do you want to proceed with this operation? (y/n): "));
+                    rl.close();
+
+                    if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+                        console.log("");
+                        console.log(theme.colors.dim("Operation cancelled."));
+                        console.log("");
+                        return;
+                    }
+                    console.log("");
+                }
+            }
+
             console.log("");
             console.log(theme.colors.primary("🔍 Analyzing your prompt..."));
             console.log("");
@@ -2045,26 +2484,26 @@ program
             spinner.start();
 
             const t0 = Date.now();
-            let analysis: string;
+            let analysisResult: ResultWithUsage;
 
             try {
                 if (provider === "openai") {
-                    analysis = await analyzePromptOpenAI(original, apiKey, modelToUse);
+                    analysisResult = await analyzePromptOpenAI(original, apiKey, modelToUse);
                 } else if (provider === "anthropic") {
-                    analysis = await analyzePromptAnthropic(original, apiKey, modelToUse);
+                    analysisResult = await analyzePromptAnthropic(original, apiKey, modelToUse);
                 } else if (provider === "google") {
-                    analysis = await analyzePromptGemini(original, apiKey, modelToUse);
+                    analysisResult = await analyzePromptGemini(original, apiKey, modelToUse);
                 } else if (provider === "xai") {
-                    analysis = await analyzePromptXAI(original, apiKey, modelToUse);
+                    analysisResult = await analyzePromptXAI(original, apiKey, modelToUse);
                 } else if (provider === "deepseek") {
-                    analysis = await analyzePromptDeepSeek(original, apiKey, modelToUse);
+                    analysisResult = await analyzePromptDeepSeek(original, apiKey, modelToUse);
                 } else {
                     throw new Error(`Unsupported provider: ${provider}`);
                 }
 
                 const duration = ((Date.now() - t0) / 1000).toFixed(1);
                 spinner.stop(`Analysis complete in ${duration}s`);
-                debugLog("analyze.done", { provider, ms: Date.now() - t0, analysisLength: analysis.length });
+                debugLog("analyze.done", { provider, ms: Date.now() - t0, analysisLength: analysisResult.result.length });
             } catch (e) {
                 debugLog("analyze.error", { provider, ms: Date.now() - t0, error: e instanceof Error ? e.message : String(e) });
                 spinner.fail("Analysis failed");
@@ -2076,10 +2515,34 @@ program
             console.log("");
             console.log(theme.colors.dim("─".repeat(80)));
             console.log("");
-            console.log(analysis);
+            console.log(analysisResult.result);
             console.log("");
             console.log(theme.colors.dim("─".repeat(80)));
             console.log("");
+
+            // Display actual cost if requested
+            if (options.showCost) {
+                const actualModel = modelToUse || getDefaultModelForProvider(provider);
+                const actualCost = calculateCost(analysisResult.usage.inputTokens, analysisResult.usage.outputTokens, actualModel);
+
+                console.log(theme.colors.primary("💰 Actual Cost"));
+                console.log(theme.colors.dim("─".repeat(80)));
+                console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(actualModel));
+                console.log(theme.colors.info(`   Input tokens: `) + theme.colors.secondary(formatTokens(analysisResult.usage.inputTokens)));
+                console.log(theme.colors.info(`   Output tokens: `) + theme.colors.secondary(formatTokens(analysisResult.usage.outputTokens)));
+                console.log(theme.colors.info(`   Actual cost: `) + theme.colors.accent(formatCost(actualCost)));
+
+                // Show comparison with estimate
+                if (costEstimate) {
+                    const accuracy = ((costEstimate.estimatedCost / actualCost) * 100).toFixed(1);
+                    console.log(theme.colors.dim(`   Estimate accuracy: ${accuracy}%`));
+                }
+
+                console.log(theme.colors.dim("─".repeat(80)));
+                console.log("");
+            }
+
+            const analysis = analysisResult.result;
 
             // Handle output options
             if (options.output) {

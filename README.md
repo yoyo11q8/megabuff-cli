@@ -47,6 +47,7 @@ megabuff optimize "Rewrite this prompt to be clearer"
 - 🔄 **Iterative Refinement** - Progressive improvement with multiple optimization passes
 - 🔍 **Comparison Mode** - Test multiple providers side-by-side to find the best result
 - 📊 **Prompt Analysis** - Get detailed feedback on strengths, weaknesses, and improvement suggestions
+- 💰 **Cost Tracking** - Estimate and monitor API costs before running operations
 - ⚡ **Lightning Fast** - Optimize prompts in seconds
 - 📋 **Auto-Clipboard** - Results copied automatically
 - 🔀 **Flexible Input** - Inline, file, pipe, or interactive
@@ -634,6 +635,53 @@ megabuff optimize "your prompt" --compare --providers openai,deepseek --style co
 - Use `--style` to ensure consistent optimization approach across providers
 - Use `--providers` to focus on specific providers you want to compare
 
+### 💰 Cost Tracking & Estimation
+
+**Know before you spend!** Estimate and track API costs for your operations.
+
+```bash
+# Show cost estimate before running optimization
+megabuff optimize "your prompt" --show-cost
+
+# Only estimate cost without running (perfect for budgeting)
+megabuff optimize "your prompt" --estimate-only
+
+# Estimate with multiple iterations
+megabuff optimize "your prompt" --iterations 3 --estimate-only
+
+# Show cost for analysis
+megabuff analyze "your prompt" --show-cost
+
+# Estimate only for analysis
+megabuff analyze "your prompt" --estimate-only
+
+# Compare costs across providers (combine with --compare)
+megabuff optimize "your prompt" --compare --show-cost
+```
+
+**What you see:**
+- Model being used for the operation
+- Estimated input tokens
+- Estimated output tokens
+- Estimated cost in USD
+
+**How it works:**
+- Estimates token count based on your prompt text
+- Uses current pricing for each model/provider
+- Accounts for system prompts and iterations
+- Shows cost BEFORE making any API calls
+
+**Pricing information:**
+- Prices are per 1M tokens and updated regularly
+- Includes all supported models (OpenAI, Anthropic, Google, xAI, DeepSeek)
+- Costs vary significantly between models (from $0.04/1M to $75/1M tokens)
+
+**Pro Tips:**
+- Use `--estimate-only` to preview costs before committing
+- Compare costs between providers to find the most economical option
+- Most operations cost less than $0.01 with efficient models
+- Use `--show-cost` to track cumulative spending in sessions
+
 ### 📊 Prompt Analysis
 
 **Not sure what's wrong with your prompt?** Get detailed AI-powered feedback!
@@ -744,6 +792,13 @@ megabuff analyze "Write a function that does stuff"
 megabuff analyze --provider anthropic "Explain how neural networks work"
 megabuff analyze --file draft-prompt.txt --output analysis-report.txt
 megabuff analyze "Create a chatbot for customer support" --provider openai
+
+# 💰 Cost tracking and estimation
+megabuff optimize "your prompt" --show-cost
+megabuff optimize "your prompt" --estimate-only
+megabuff optimize "your prompt" --iterations 5 --estimate-only
+megabuff analyze "your prompt" --show-cost
+megabuff optimize --compare --providers openai,anthropic --show-cost "Cost comparison"
 
 # 🔧 Power user combos
 megabuff optimize --file long-prompt.txt --provider anthropic -o result.txt --interactive
