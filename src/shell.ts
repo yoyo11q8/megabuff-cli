@@ -283,6 +283,8 @@ function showShellHelp(): void {
     console.log("");
     console.log(theme.colors.dim("═".repeat(80)));
     console.log("");
+    console.log(theme.colors.dim("💡 Feature request? → ") + theme.colors.info("github.com/thesupermegabuff/megabuff-cli/issues"));
+    console.log("");
 }
 
 /**
