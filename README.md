@@ -1083,6 +1083,7 @@ git commit -m "Release preparation"
 npm version minor
 
 # 3. Publish!
+npm login
 npm publish
 
 # 4. Push tags
