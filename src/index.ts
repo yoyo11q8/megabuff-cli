@@ -14,6 +14,7 @@ import { getDefaultModel } from "./models.js";
 import { themes, getAllThemeNames, isValidTheme, type ThemeName } from "./themes.js";
 import { getCurrentTheme, clearThemeCache } from "./theme-utils.js";
 import { estimateOptimizationCost, estimateAnalysisCost, formatCost, formatTokens, getDefaultModelForProvider, calculateCost, getPricingBreakdown } from "./cost.js";
+import { startInteractiveShell } from "./shell.js";
 
 const program = new Command();
 
@@ -2805,6 +2806,15 @@ program
             console.error("");
             process.exit(1);
         }
+    });
+
+// Interactive shell command
+program
+    .command('shell')
+    .aliases(['interactive', 'i'])
+    .description('Start interactive shell mode (run commands without typing "megabuff" each time)')
+    .action(async () => {
+        await startInteractiveShell();
     });
 
 program.parse();

@@ -40,6 +40,7 @@ megabuff optimize "Rewrite this prompt to be clearer"
 
 - 🤖 **Multi-Provider Support** - OpenAI, Anthropic Claude, Google Gemini, xAI, DeepSeek & more
 - 🔑 **BYOK Model** - Bring your own API key, full control
+- 🐚 **Interactive Shell Mode** - Run multiple commands without repeating `megabuff` (NEW!)
 - 🎨 **16 Beautiful Themes** - Customize your CLI experience
 - 🎭 **7 Optimization Styles** - Concise, detailed, technical, creative, formal, casual, balanced
 - 🔧 **Custom System Prompts** - Ultimate control over optimization behavior
@@ -429,6 +430,36 @@ See the full color palette in action before committing! 🎨
 
 **MegaBuff is flexible!** Use whichever input method works best for you:
 
+### 🐚 Interactive Shell Mode (NEW!)
+
+**Run multiple commands without typing `megabuff` every time!**
+
+```bash
+megabuff shell
+# or: megabuff interactive
+# or: megabuff i
+
+# Now you're in the shell:
+megabuff> optimize "Write a REST API" --style technical
+megabuff> analyze "Create a chatbot"
+megabuff> theme set cyberpunk
+megabuff> exit
+```
+
+**Features:**
+- ⚡ **Faster workflow** - Skip typing `megabuff` for every command
+- 📜 **Command history** - Use arrow keys (↑/↓) to recall previous commands
+- 🔄 **Session persistence** - API keys and config loaded once
+- 💡 **Built-in help** - Type `help` anytime
+- 🧹 **Clear screen** - Type `clear` to refresh
+- 🚪 **Easy exit** - Type `exit`, `quit`, or `q` to leave
+
+**Pro Tips:**
+- All regular commands work: `optimize`, `analyze`, `config`, `theme`
+- All flags work: `--provider`, `--style`, `--iterations`, `--show-cost`, etc.
+- Press Ctrl+C twice to exit immediately
+- Perfect for batch operations and experimentation
+
 ### 1️⃣ Inline (Fastest!)
 
 ```bash
@@ -448,7 +479,7 @@ echo "Explain quantum computing" | megabuff optimize
 cat prompt.txt | megabuff optimize
 ```
 
-### 4️⃣ Interactive Mode
+### 4️⃣ Interactive Prompt Input
 
 ```bash
 megabuff optimize
@@ -814,6 +845,16 @@ megabuff analyze "your prompt" --no-copy
 **Real-world use cases to get you started:**
 
 ```bash
+# 🐚 Interactive shell mode (NEW!)
+megabuff shell
+# or: megabuff i
+megabuff> optimize "Create a REST API" --style technical
+megabuff> analyze "Write a chatbot"
+megabuff> optimize --compare --providers openai,anthropic "Explain AI"
+megabuff> theme set cyberpunk
+megabuff> help
+megabuff> exit
+
 # 🚀 Quick optimization
 megabuff optimize "Write code for user auth"
 
