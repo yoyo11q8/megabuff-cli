@@ -3,9 +3,8 @@
 </h1>
 <div align="center">
 
-**Transform your AI prompts from good to great!** ✨
-
-AI-powered prompt optimizer with multi-provider support (OpenAI, Anthropic, Gemini, DeepSeek, xAI & more)
+**🤖 CLI for Better prompts, transparent costs, & zero vendor lock-in. Optimize AI prompts across OpenAI, Claude, Gemini, Grok, xAI, and DeepSeek with detailed per-token pricing. BYOK keeps it honest.
+**
 
 🔑 BYOK (Bring Your Own Key) • 🎨 16 Beautiful Themes • ⚡ Lightning Fast
 
@@ -637,7 +636,7 @@ megabuff optimize "your prompt" --compare --providers openai,deepseek --style co
 
 ### 💰 Cost Tracking & Estimation
 
-**Know before you spend!** Estimate and track API costs for your operations.
+**Know before you spend!** Estimate and track API costs for your operations with detailed per-token and per-model pricing information.
 
 ```bash
 # Show cost estimate before running optimization
@@ -659,28 +658,105 @@ megabuff analyze "your prompt" --estimate-only
 megabuff optimize "your prompt" --compare --show-cost
 ```
 
-**What you see:**
+**What you see with `--show-cost`:**
+
+**1. Initial Cost Estimate (before operation runs):**
 - Model being used for the operation
+- **Detailed pricing breakdown:**
+  - Input price per 1M tokens and per individual token
+  - Output price per 1M tokens and per individual token
 - Estimated input tokens
 - Estimated output tokens
-- Estimated cost in USD
+- Estimated total cost in USD
+
+**2. Actual Cost Summary (after operation completes):**
+- Model used
+- **Detailed pricing breakdown** (same as estimate)
+- Actual input tokens used
+- Actual output tokens used
+- Actual total cost in USD
+- Estimate accuracy percentage
+
+**3. Comparison Mode Pricing:**
+- Individual pricing details for each provider's model
+- Total tokens used across all providers
+- Total cost across all providers
+- Average cost per provider
+- Per-iteration cost breakdown (when using `--iterations`)
+
+**Example output:**
+```
+💰 Cost Estimate
+────────────────────────────────────────────────────────────────────────────────
+   Model: claude-sonnet-4-5
+   Pricing:
+      Input:  $3.00/1M tokens ($0.000003000/token)
+      Output: $15.00/1M tokens ($0.000015000/token)
+
+   Input tokens: 512
+   Output tokens (est): 614
+   Estimated cost: $0.0025
+────────────────────────────────────────────────────────────────────────────────
+
+... [operation runs] ...
+
+💰 Actual Cost
+────────────────────────────────────────────────────────────────────────────────
+   Model: claude-sonnet-4-5
+   Pricing:
+      Input:  $3.00/1M tokens ($0.000003000/token)
+      Output: $15.00/1M tokens ($0.000015000/token)
+
+   Optimization tokens: 512 in + 621 out
+   Optimization cost: $0.0025
+   Total cost: $0.0025
+   Estimate accuracy: 98.9%
+────────────────────────────────────────────────────────────────────────────────
+```
 
 **How it works:**
-- Estimates token count based on your prompt text
+- Estimates token count based on your prompt text (~4 chars per token)
 - Uses current pricing for each model/provider
 - Accounts for system prompts and iterations
-- Shows cost BEFORE making any API calls
+- Shows detailed cost breakdown BEFORE making any API calls
+- Displays actual costs with pricing details AFTER operations complete
+- Compares estimate vs actual for accuracy tracking
 
-**Pricing information:**
-- Prices are per 1M tokens and updated regularly
-- Includes all supported models (OpenAI, Anthropic, Google, xAI, DeepSeek)
-- Costs vary significantly between models (from $0.04/1M to $75/1M tokens)
+**Pricing information (updated January 2025):**
+
+| Provider | Model | Input (per 1M) | Output (per 1M) |
+|----------|-------|----------------|-----------------|
+| **OpenAI** | gpt-5.2 | $2.50 | $10.00 |
+| | gpt-4o | $2.50 | $10.00 |
+| | gpt-4o-mini | $0.15 | $0.60 |
+| | gpt-4-turbo | $10.00 | $30.00 |
+| **Anthropic** | claude-opus-4-5 | $15.00 | $75.00 |
+| | claude-sonnet-4-5 | $3.00 | $15.00 |
+| | claude-sonnet-4-0 | $3.00 | $15.00 |
+| | claude-3-haiku | $0.25 | $1.25 |
+| **Google** | gemini-2.5-pro | $1.25 | $5.00 |
+| | gemini-2.5-flash | $0.075 | $0.30 |
+| | gemini-2.0-flash | $0.075 | $0.30 |
+| **xAI** | grok-beta | $5.00 | $15.00 |
+| | grok-vision-beta | $5.00 | $15.00 |
+| **DeepSeek** | deepseek-chat | $0.14 | $0.28 |
+| | deepseek-reasoner | $0.55 | $2.19 |
+
+*Prices are in USD per 1 million tokens*
+
+**Cost calculation formula:**
+```
+Cost = (input_tokens / 1,000,000 × input_price) + (output_tokens / 1,000,000 × output_price)
+```
 
 **Pro Tips:**
 - Use `--estimate-only` to preview costs before committing
 - Compare costs between providers to find the most economical option
-- Most operations cost less than $0.01 with efficient models
+- Most operations cost less than $0.01 with efficient models (gemini-flash, gpt-4o-mini, deepseek-chat)
 - Use `--show-cost` to track cumulative spending in sessions
+- Detailed pricing information helps you understand exactly where costs come from
+- Per-token prices are shown with 9 decimal precision for accuracy
+- In comparison mode, you'll see pricing details for each provider side-by-side
 
 ### 📊 Prompt Analysis
 
