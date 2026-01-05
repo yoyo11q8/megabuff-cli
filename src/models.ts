@@ -11,7 +11,7 @@ export const MODEL_PROVIDER_MAP: Record<string, Provider> = {
     // Anthropic models
     "claude-opus-4-5": "anthropic",
     "claude-sonnet-4-5": "anthropic",
-    "claude-sonnet-4": "anthropic",
+    "claude-sonnet-4-0": "anthropic",
     "claude-3-5-sonnet-20241022": "anthropic",
     "claude-sonnet-4-5-20250929": "anthropic",
     "claude-3-opus-20240229": "anthropic",

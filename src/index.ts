@@ -191,6 +191,14 @@ function getSystemPrompt(
 
     const basePrompt = `You are an expert prompt engineer. Your task is to analyze and optimize prompts for AI language models.
 
+CRITICAL: You are optimizing THE PROMPT ITSELF, not answering or executing it.
+
+For example:
+- Input: "Write a function to validate emails"
+- Output: "Create a robust email validation function in JavaScript that checks for common email format rules including @ symbol, domain name, and TLD. Include edge case handling for special characters and provide clear error messages for invalid formats."
+
+NOT: "Here's a function to validate emails: function validateEmail(email) { ... }"
+
 When given a prompt, you should:
 1. Identify ambiguities or unclear instructions
 2. Add relevant context that would improve results
@@ -198,7 +206,7 @@ When given a prompt, you should:
 4. Ensure specificity and actionable requests
 5. Maintain the original intent while enhancing effectiveness
 
-Return ONLY the optimized prompt without explanations or meta-commentary.`;
+Return ONLY the optimized prompt without explanations, meta-commentary, or answers to the prompt itself.`;
 
     // Add style-specific instructions
     const styleInstructions = getStyleInstructions(style);
@@ -1695,6 +1703,52 @@ async function runComparisonMode(
         }
     }
 
+    // Parse per-provider models if specified
+    const providerModels: Record<string, string> = {};
+    if (options.models) {
+        const modelPairs = options.models.split(",").map((m: string) => m.trim());
+
+        for (const pair of modelPairs) {
+            const [providerStr, model] = pair.split(":").map((s: string) => s.trim());
+
+            if (!providerStr || !model) {
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Invalid model specification '${pair}'`));
+                console.error("");
+                console.error(theme.colors.dim("   Format: ") + theme.colors.info("provider:model (e.g., 'openai:gpt-4o,anthropic:claude-opus-4-5')"));
+                console.error("");
+                process.exit(1);
+            }
+
+            const provider = providerStr.toLowerCase();
+            if (!PROVIDERS.includes(provider)) {
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Invalid provider '${provider}' in model specification`));
+                console.error("");
+                console.error(theme.colors.dim("   Valid providers: ") + theme.colors.info(PROVIDERS.join(", ")));
+                console.error("");
+                process.exit(1);
+            }
+
+            // Verify the model belongs to the provider
+            const modelProvider = getProviderForModel(model);
+            if (!modelProvider || modelProvider !== provider) {
+                console.error("");
+                console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Model '${model}' does not belong to provider '${provider}'`));
+                console.error("");
+                if (modelProvider) {
+                    console.error(theme.colors.dim(`   '${model}' is a ${modelProvider} model`));
+                } else {
+                    console.error(theme.colors.dim(`   '${model}' is not a recognized model`));
+                }
+                console.error("");
+                process.exit(1);
+            }
+
+            providerModels[provider] = model;
+        }
+    }
+
     // Get all available providers with configured API keys
     const availableProviders: Provider[] = [];
     const providerKeys: Record<Provider, string> = {} as Record<Provider, string>;
@@ -1745,14 +1799,21 @@ async function runComparisonMode(
     console.log("");
 
     // Show cost estimate for comparison mode if requested
+    let totalEstimatedCost = 0; // Store for accuracy calculation later
     if (options.showCost) {
         console.log(theme.colors.primary("💰 Cost Estimate (All Providers)"));
         console.log(theme.colors.dim("─".repeat(80)));
 
-        let totalEstimatedCost = 0;
         for (const provider of availableProviders) {
-            const configuredModel = await getModel();
-            const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+            // Determine which model to use for cost estimation
+            // Priority: 1) --models flag, 2) global config, 3) provider default
+            let modelToUse: string | undefined;
+            if (providerModels[provider]) {
+                modelToUse = providerModels[provider];
+            } else {
+                const configuredModel = await getModel();
+                modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+            }
             const modelForCost = modelToUse || getDefaultModelForProvider(provider);
             const costEstimate = estimateOptimizationCost(original, modelForCost, iterations);
 
@@ -1785,7 +1846,10 @@ async function runComparisonMode(
         }
     }
 
-    // Run optimization for each provider in parallel
+    // Run optimization for each provider
+    // Use sequential execution if we need interactive prompts for iterations
+    const needsSequentialExecution = options.showCost && iterations > 1 && process.stdin.isTTY && process.stdout.isTTY;
+
     const results: Array<{
         provider: Provider;
         result: string;
@@ -1797,8 +1861,7 @@ async function runComparisonMode(
         model: string;
     }> = [];
 
-    await Promise.all(
-        availableProviders.map(async (provider) => {
+    const processProvider = async (provider: Provider) => {
             const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
             const spinner = createSpinner(`${providerEmoji} Optimizing with ${formatProviderName(provider)}...`);
             spinner.start();
@@ -1810,8 +1873,18 @@ async function runComparisonMode(
 
             try {
                 const apiKey = providerKeys[provider];
-                const configuredModel = await getModel();
-                const modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+
+                // Determine which model to use for this provider
+                // Priority: 1) --models flag, 2) global config, 3) provider default
+                let modelToUse: string | undefined;
+                if (providerModels[provider]) {
+                    // Use model specified in --models flag for this provider
+                    modelToUse = providerModels[provider];
+                } else {
+                    // Fall back to global configured model if it matches this provider
+                    const configuredModel = await getModel();
+                    modelToUse = configuredModel && getProviderForModel(configuredModel) === provider ? configuredModel : undefined;
+                }
 
                 // Run iterations for this provider
                 for (let i = 0; i < iterations; i++) {
@@ -1939,39 +2012,19 @@ async function runComparisonMode(
                     error: error instanceof Error ? error.message : String(error)
                 });
             }
-        })
-    );
+    };
+
+    // Execute providers sequentially if we need interactive prompts, otherwise run in parallel
+    if (needsSequentialExecution) {
+        for (const provider of availableProviders) {
+            await processProvider(provider);
+        }
+    } else {
+        await Promise.all(availableProviders.map(processProvider));
+    }
 
     // Sort results by provider name for consistent display
     results.sort((a, b) => a.provider.localeCompare(b.provider));
-
-    // Display comparison results
-    console.log("");
-    console.log(theme.colors.primary("📊 Comparison Results"));
-    console.log(theme.colors.dim("─".repeat(80)));
-    console.log("");
-
-    for (const { provider, result, duration, error, totalInputTokens, totalOutputTokens, actualCost, model } of results) {
-        const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
-
-        console.log(theme.colors.secondary(`${providerEmoji} ${formatProviderName(provider).toUpperCase()}`) + theme.colors.dim(` (${model})`));
-        console.log(theme.colors.dim(`   Duration: ${(duration / 1000).toFixed(1)}s | Length: ${result.length} chars`));
-        if (!error) {
-            console.log(theme.colors.dim(`   Tokens: ${formatTokens(totalInputTokens)} in + ${formatTokens(totalOutputTokens)} out | Cost: ${formatCost(actualCost)}`));
-        }
-        console.log("");
-
-        if (error) {
-            console.log(theme.colors.error(`   ❌ Error: ${error}`));
-        } else {
-            console.log(theme.colors.dim("   Result:"));
-            console.log(result.split("\n").map(line => `   ${line}`).join("\n"));
-        }
-
-        console.log("");
-        console.log(theme.colors.dim("─".repeat(80)));
-        console.log("");
-    }
 
     // Summary statistics
     const successfulResults = results.filter(r => !r.error);
@@ -1979,12 +2032,81 @@ async function runComparisonMode(
         const avgDuration = successfulResults.reduce((sum, r) => sum + r.duration, 0) / successfulResults.length;
         const avgLength = successfulResults.reduce((sum, r) => sum + r.result.length, 0) / successfulResults.length;
         const totalCost = successfulResults.reduce((sum, r) => sum + r.actualCost, 0);
+        const totalInputTokens = successfulResults.reduce((sum, r) => sum + r.totalInputTokens, 0);
+        const totalOutputTokens = successfulResults.reduce((sum, r) => sum + r.totalOutputTokens, 0);
 
-        console.log(theme.colors.primary("📈 Summary"));
-        console.log(theme.colors.dim(`   Successful: ${successfulResults.length}/${results.length} providers`));
-        console.log(theme.colors.dim(`   Average duration: ${(avgDuration / 1000).toFixed(1)}s`));
-        console.log(theme.colors.dim(`   Average length: ${Math.round(avgLength)} chars`));
-        console.log(theme.colors.dim(`   Total cost: ${formatCost(totalCost)}`));
+        // Calculate estimate accuracy if cost tracking is enabled
+        const estimateAccuracy = options.showCost && totalEstimatedCost > 0
+            ? ((totalEstimatedCost / totalCost) * 100).toFixed(1)
+            : null;
+
+        // Pretty banner summary
+        console.log("");
+        console.log(theme.colors.primary("╔══════════════════════════════════════════════════════════════════════════════╗"));
+        console.log(theme.colors.primary("║") + "                           " + theme.colors.accent("📈 COMPARISON SUMMARY") + "                              " + theme.colors.primary("║"));
+        console.log(theme.colors.primary("╚══════════════════════════════════════════════════════════════════════════════╝"));
+        console.log("");
+
+        // Display detailed comparison results for each provider
+        console.log(theme.colors.info("  📊 Comparison Results"));
+        console.log(theme.colors.dim("  ────────────────────────────────────────────────────────────────────────────"));
+        console.log("");
+
+        for (const { provider, result, duration, error, totalInputTokens, totalOutputTokens, actualCost, model } of results) {
+            const providerEmoji = provider === "openai" ? "🤖" : provider === "anthropic" ? "🧠" : provider === "google" ? "✨" : provider === "xai" ? "🚀" : provider === "deepseek" ? "🔮" : "🔧";
+
+            console.log(theme.colors.secondary(`  ${providerEmoji} ${formatProviderName(provider).toUpperCase()}`) + theme.colors.dim(` (${model})`));
+            console.log(theme.colors.dim(`     Duration: ${(duration / 1000).toFixed(1)}s | Length: ${result.length} chars`));
+            if (!error) {
+                console.log(theme.colors.dim(`     Tokens: ${formatTokens(totalInputTokens)} in + ${formatTokens(totalOutputTokens)} out | Cost: ${formatCost(actualCost)}`));
+            }
+            console.log("");
+
+            if (error) {
+                console.log(theme.colors.error(`     ❌ Error: ${error}`));
+            } else {
+                console.log(theme.colors.dim("     Result:"));
+                console.log(result.split("\n").map(line => `     ${line}`).join("\n"));
+            }
+
+            console.log("");
+        }
+
+        console.log(theme.colors.dim("  ────────────────────────────────────────────────────────────────────────────"));
+        console.log("");
+
+        console.log(theme.colors.info("  📈 Statistics"));
+        console.log(theme.colors.dim("  ────────────────────────────────────────────────────────────────────────────"));
+        console.log(theme.colors.dim(`     Successful providers: `) + theme.colors.success(`${successfulResults.length}/${results.length}`));
+        console.log(theme.colors.dim(`     Average duration: `) + theme.colors.secondary(`${(avgDuration / 1000).toFixed(1)}s`));
+        console.log(theme.colors.dim(`     Average length: `) + theme.colors.secondary(`${Math.round(avgLength)} chars`));
+        console.log("");
+
+        console.log(theme.colors.info("  🤖 Models Used"));
+        console.log(theme.colors.dim("  ────────────────────────────────────────────────────────────────────────────"));
+        for (const result of successfulResults) {
+            const providerEmoji = result.provider === "openai" ? "🤖" :
+                                result.provider === "anthropic" ? "🧠" :
+                                result.provider === "google" ? "✨" :
+                                result.provider === "xai" ? "🚀" :
+                                result.provider === "deepseek" ? "🔮" : "🔧";
+            console.log(theme.colors.dim(`     ${providerEmoji} ${formatProviderName(result.provider)}: `) + theme.colors.secondary(result.model));
+        }
+        console.log("");
+
+        if (options.showCost) {
+            console.log(theme.colors.info("  💰 Cost Analysis"));
+            console.log(theme.colors.dim("  ────────────────────────────────────────────────────────────────────────────"));
+            console.log(theme.colors.dim(`     Total tokens: `) + theme.colors.secondary(`${formatTokens(totalInputTokens)} in + ${formatTokens(totalOutputTokens)} out`));
+            console.log(theme.colors.dim(`     Total cost: `) + theme.colors.accent(formatCost(totalCost)));
+            console.log(theme.colors.dim(`     Average cost per provider: `) + theme.colors.secondary(formatCost(totalCost / successfulResults.length)));
+            if (estimateAccuracy) {
+                console.log(theme.colors.dim(`     Estimate accuracy: `) + theme.colors.info(`${estimateAccuracy}%`));
+            }
+            console.log("");
+        }
+
+        console.log(theme.colors.dim("  ════════════════════════════════════════════════════════════════════════════"));
         console.log("");
     }
 
@@ -2009,6 +2131,7 @@ program
     .option("--iterations <number>", "Number of optimization passes (1-5, default: 1)", "1")
     .option("-c, --compare", "Compare optimizations from multiple providers side-by-side")
     .option("--providers <providers>", "Comma-separated list of providers to compare (e.g., 'openai,anthropic,google')")
+    .option("--models <models>", "Specify models per provider in comparison mode (e.g., 'openai:gpt-4o,anthropic:claude-opus-4-5')")
     .option("-v, --verbose", "Show output from each iteration (useful with --iterations)")
     .option("-a, --analyze-first", "Analyze the prompt before optimizing to see what will be improved")
     .option("--show-cost", "Display estimated cost before running and actual cost after")
