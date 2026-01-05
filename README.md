@@ -3,8 +3,12 @@
 </h1>
 <div align="center">
 
-**🤖 CLI for Better prompts, transparent costs, & zero vendor lock-in. Optimize AI prompts across OpenAI, Claude, Gemini, Grok, xAI, and DeepSeek with detailed per-token pricing. BYOK keeps it honest.
-**
+<br/>
+
+**CLI for Better prompts, transparent costs, & zero vendor lock-in. Optimize AI prompts across OpenAI, Claude, Gemini, Grok, xAI, and DeepSeek with detailed per-token pricing. BYOK keeps it honest.**
+
+ **[Star us on GitHub](https://github.com/thesupermegabuff/megabuff-cli)** 
+| **[Request a Feature](https://github.com/thesupermegabuff/megabuff-cli/issues)**
 
 🔑 BYOK (Bring Your Own Key) • 🎨 16 Beautiful Themes • ⚡ Lightning Fast
 
@@ -17,11 +21,6 @@
 
 <img width="690" src="media/github-media-banner.png" alt="MegaBuff Banner" width="100%">
 
-<br/>
-
-⭐ **[Star us on GitHub](https://github.com/thesupermegabuff/megabuff-cli)** — it helps a lot!
-
-<br/>
 </div>
 
 ---
