@@ -14,9 +14,9 @@ import { getDefaultModel } from "./models.js";
 import { themes, getAllThemeNames, isValidTheme, type ThemeName } from "./themes.js";
 import { getCurrentTheme, clearThemeCache } from "./theme-utils.js";
 import { estimateOptimizationCost, estimateAnalysisCost, formatCost, formatTokens, getDefaultModelForProvider, calculateCost, getPricingBreakdown } from "./cost.js";
-import { startInteractiveShell } from "./shell.js";
+import { startInteractiveShell, isInShellMode } from "./shell.js";
 
-const program = new Command();
+export const program = new Command();
 
 // Initialize theme at startup
 let theme = await getCurrentTheme();
@@ -50,6 +50,22 @@ function maskSecret(secret: string | undefined): string {
     if (!secret) return "<none>";
     if (secret.length <= 10) return "<redacted>";
     return `${secret.slice(0, 3)}…${secret.slice(-2)}`;
+}
+
+/**
+ * Exit or throw error based on shell mode.
+ * In shell mode, throws an error so the shell can catch it and continue.
+ * Outside shell mode, calls process.exit(1).
+ */
+function exitOrThrow(message?: string): never {
+    if (isInShellMode()) {
+        // In shell mode, throw error so the shell can catch it and continue
+        const err = new Error(message || "Command failed");
+        // Mark it so the shell knows to suppress the error message (already printed)
+        (err as any).alreadyPrinted = true;
+        throw err;
+    }
+    process.exit(1);
 }
 
 program
@@ -91,7 +107,11 @@ async function getInput(inlinePrompt: string | undefined, options: { file?: stri
         return Buffer.concat(chunks).toString("utf-8").trim();
     }
 
-    // Priority 4: Interactive prompt
+    // Priority 4: Interactive prompt (not in shell mode - readline conflicts)
+    if (isInShellMode()) {
+        throw new Error("No prompt provided. In shell mode, provide the prompt inline or use --file.");
+    }
+
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
@@ -1115,13 +1135,13 @@ async function interactiveConfig(): Promise<void> {
 
                 if (!provider) {
                     console.error(theme.colors.error(`Error: Invalid provider. Valid options: ${PROVIDERS.join(", ")}`));
-                    process.exit(1);
+                    exitOrThrow("Invalid provider");
                 }
 
                 const token = (await rl.question(theme.colors.primary("Enter your API token: "))).trim();
                 if (!token) {
                     console.error(theme.colors.error("Error: No token provided"));
-                    process.exit(1);
+                    exitOrThrow("No token provided");
                 }
 
                 const store = (await rl.question(theme.colors.primary("Store in system keychain? (Y/n): "))).trim().toLowerCase();
@@ -1154,7 +1174,7 @@ async function interactiveConfig(): Promise<void> {
 
                 if (!provider) {
                     console.error(theme.colors.error(`Error: Invalid provider. Valid options: ${PROVIDERS.join(", ")}`));
-                    process.exit(1);
+                    exitOrThrow();
                 }
 
                 await setProvider(provider);
@@ -1178,14 +1198,14 @@ async function interactiveConfig(): Promise<void> {
                 const modelInput = (await rl.question(theme.colors.primary("Enter model name: "))).trim();
                 if (!modelInput) {
                     console.error(theme.colors.error("Error: No model provided"));
-                    process.exit(1);
+                    exitOrThrow();
                 }
 
                 const provider = getProviderForModel(modelInput);
                 if (!provider) {
                     console.error(theme.colors.error(`Error: Unknown model '${modelInput}'`));
                     console.error(theme.colors.warning("Tip: Use one of the models listed above"));
-                    process.exit(1);
+                    exitOrThrow();
                 }
 
                 await setModel(modelInput);
@@ -1228,7 +1248,7 @@ async function interactiveConfig(): Promise<void> {
 
             default: {
                 console.error(theme.colors.error("Invalid choice. Please enter 1-5."));
-                process.exit(1);
+                exitOrThrow();
             }
         }
     } finally {
@@ -1236,14 +1256,68 @@ async function interactiveConfig(): Promise<void> {
     }
 }
 
+/**
+ * Display the current configuration (used by both config and config show commands)
+ */
+async function showConfigStatus(): Promise<void> {
+    const config = await getConfig();
+    const selectedProvider = await getProvider();
+    const selectedModel = await getModel();
+    const effectiveModel = selectedModel ?? getDefaultModel(selectedProvider);
+    const currentThemeName = await getThemeName();
+    const currentTheme = themes[currentThemeName];
+    const providerStatuses = await Promise.all(
+        PROVIDERS.map(async (p) => [p, await hasApiKey(p)] as const)
+    );
+
+    const providerEmoji = selectedProvider === "openai" ? "🤖" : selectedProvider === "anthropic" ? "🧠" : selectedProvider === "google" ? "✨" : selectedProvider === "xai" ? "🚀" : selectedProvider === "deepseek" ? "🔮" : "🔧";
+
+    console.log("");
+    console.log(theme.colors.primary("╭────────────────────────────────────────────╮"));
+    console.log(theme.colors.primary("│") + theme.colors.highlight("  ⚙️  MegaBuff Configuration              ") + theme.colors.primary("│"));
+    console.log(theme.colors.primary("╰────────────────────────────────────────────╯"));
+    console.log("");
+
+    console.log(theme.colors.dim("  Active Settings:"));
+    console.log(theme.colors.primary(`  ${providerEmoji} Provider: `) + theme.colors.highlight(formatProviderName(selectedProvider)));
+    console.log(theme.colors.primary(`  🎯 Model: `) + theme.colors.highlight(effectiveModel) + theme.colors.dim(selectedModel ? "" : " (default)"));
+    console.log(theme.colors.primary(`  💾 Storage: `) + theme.colors.highlight(config.useKeychain ? "System Keychain 🔐" : "Config File"));
+    console.log(theme.colors.primary(`  🎨 Theme: `) + theme.colors.highlight(currentTheme.name));
+
+    console.log("");
+    console.log(theme.colors.dim("  API Token Status:"));
+    for (const [p, ok] of providerStatuses) {
+        const emoji = p === "openai" ? "🤖" : p === "anthropic" ? "🧠" : p === "google" ? "✨" : p === "xai" ? "🚀" : p === "deepseek" ? "🔮" : "🔧";
+        console.log(`  ${emoji} ${theme.colors.secondary(formatProviderName(p).padEnd(16))}: ${ok ? theme.colors.success("✓ Configured") : theme.colors.dim("✗ Not configured")}`);
+    }
+
+    console.log("");
+    console.log(theme.colors.dim("  📁 Config location: ") + theme.colors.accent("~/.megabuff/config.json"));
+    console.log("");
+}
+
 // Config command
 const configCmd = program
     .command("config")
     .description("Manage configuration (run without arguments for interactive setup)")
     .action(async () => {
-        // Interactive mode when no subcommand
-        if (process.stdin.isTTY && process.stdout.isTTY) {
+        // Interactive mode when no subcommand (but NOT in shell mode - nested readline conflicts)
+        if (process.stdin.isTTY && process.stdout.isTTY && !isInShellMode()) {
             await interactiveConfig();
+        } else if (isInShellMode()) {
+            // In shell mode, show current config and available subcommands
+            try {
+                await showConfigStatus();
+            } catch (error) {
+                console.error(theme.colors.error("❌ Error loading config: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            }
+
+            console.log(theme.colors.info("  💡 Config Commands:"));
+            console.log(theme.colors.secondary("    config token <key> --provider <name>") + theme.colors.dim("   Set API token"));
+            console.log(theme.colors.secondary("    config provider <name>") + theme.colors.dim("               Set default provider"));
+            console.log(theme.colors.secondary("    config model <name>") + theme.colors.dim("                  Set default model"));
+            console.log(theme.colors.secondary("    config remove --provider <name>") + theme.colors.dim("      Remove API token"));
+            console.log("");
         } else {
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("Interactive mode requires a TTY"));
@@ -1254,7 +1328,7 @@ const configCmd = program
             console.error(theme.colors.accent("     megabuff config model <model>"));
             console.error(theme.colors.accent("     megabuff config show"));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -1273,18 +1347,20 @@ configCmd
                 console.error("");
                 console.error(theme.colors.dim("   Valid providers: ") + theme.colors.info(PROVIDERS.join(", ")));
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             let finalToken = token;
             if (!finalToken) {
-                if (!process.stdin.isTTY) {
+                // In shell mode or non-TTY, require token to be provided inline
+                if (!process.stdin.isTTY || isInShellMode()) {
                     console.error("");
                     console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("Missing token argument"));
                     console.error("");
-                    console.error(theme.colors.dim("   Provide it inline or run in an interactive terminal"));
+                    console.error(theme.colors.dim("   Usage: config token <your-api-key> --provider <provider>"));
+                    console.error(theme.colors.dim("   Example: config token sk-abc123 --provider openai"));
                     console.error("");
-                    process.exit(1);
+                    return;
                 }
                 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
                 try {
@@ -1298,7 +1374,7 @@ configCmd
                 console.error("");
                 console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("No token provided"));
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             await setApiKey(provider, finalToken, options.keychain || false);
@@ -1317,7 +1393,7 @@ configCmd
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -1344,7 +1420,7 @@ configCmd
                 console.error("");
                 console.error(theme.colors.dim("   Valid providers: ") + theme.colors.info(PROVIDERS.join(", ")));
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             await setProvider(p);
@@ -1357,7 +1433,7 @@ configCmd
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -1396,7 +1472,7 @@ configCmd
                         console.error("");
                     }
                 });
-                process.exit(1);
+                exitOrThrow();
             }
 
             await setModel(modelArg);
@@ -1410,7 +1486,7 @@ configCmd
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -1457,7 +1533,7 @@ configCmd
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -1477,7 +1553,7 @@ configCmd
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -1577,7 +1653,7 @@ themeCmd
                     console.error(theme.colors.info(`     • ${name}`));
                 });
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             await setThemeName(normalizedTheme);
@@ -1608,7 +1684,7 @@ themeCmd
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -1629,7 +1705,7 @@ themeCmd
                     console.error(theme.colors.info(`     • ${name}`));
                 });
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             const previewTheme = themes[normalizedTheme];
@@ -1669,7 +1745,7 @@ themeCmd
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -1698,7 +1774,7 @@ async function runComparisonMode(
                 console.error("");
                 console.error(theme.colors.dim("   Valid providers: ") + theme.colors.info(PROVIDERS.join(", ")));
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
             requestedProviders.push(p as Provider);
         }
@@ -1718,7 +1794,7 @@ async function runComparisonMode(
                 console.error("");
                 console.error(theme.colors.dim("   Format: ") + theme.colors.info("provider:model (e.g., 'openai:gpt-4o,anthropic:claude-opus-4-5')"));
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             const provider = providerStr.toLowerCase();
@@ -1728,7 +1804,7 @@ async function runComparisonMode(
                 console.error("");
                 console.error(theme.colors.dim("   Valid providers: ") + theme.colors.info(PROVIDERS.join(", ")));
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             // Verify the model belongs to the provider
@@ -1743,7 +1819,7 @@ async function runComparisonMode(
                     console.error(theme.colors.dim(`   '${model}' is not a recognized model`));
                 }
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             providerModels[provider] = model;
@@ -1776,7 +1852,7 @@ async function runComparisonMode(
         console.error(theme.colors.dim("   Configure API keys using:"));
         console.error(theme.colors.accent("   megabuff config set --provider <provider> <api-key>"));
         console.error("");
-        process.exit(1);
+        exitOrThrow();
     }
 
     if (availableProviders.length === 1) {
@@ -1793,7 +1869,7 @@ async function runComparisonMode(
             console.error(theme.colors.accent("   megabuff config set --provider <provider> <api-key>"));
         }
         console.error("");
-        process.exit(1);
+        exitOrThrow();
     }
 
     console.log(theme.colors.dim(`  Testing ${availableProviders.length} providers: ${availableProviders.map(formatProviderName).join(", ")}`));
@@ -1834,8 +1910,8 @@ async function runComparisonMode(
         console.log(theme.colors.dim("─".repeat(80)));
         console.log("");
 
-        // Prompt user to confirm proceeding
-        if (process.stdin.isTTY && process.stdout.isTTY) {
+        // Prompt user to confirm proceeding (skip in shell mode to avoid readline conflicts)
+        if (process.stdin.isTTY && process.stdout.isTTY && !isInShellMode()) {
             const rl = readline.createInterface({
                 input: process.stdin,
                 output: process.stdout
@@ -1978,8 +2054,8 @@ async function runComparisonMode(
                         console.log(theme.colors.dim("─".repeat(80)));
                         console.log("");
 
-                        // Prompt user to confirm proceeding with next iteration
-                        if (process.stdin.isTTY && process.stdout.isTTY) {
+                        // Prompt user to confirm proceeding with next iteration (skip in shell mode)
+                        if (process.stdin.isTTY && process.stdout.isTTY && !isInShellMode()) {
                             const rl = readline.createInterface({
                                 input: process.stdin,
                                 output: process.stdout
@@ -2222,7 +2298,7 @@ program
                 console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("No prompt provided"));
                 console.error(theme.colors.dim("   Provide a prompt inline, via --file, or through stdin"));
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             let provider = await getProvider(options.provider);
@@ -2232,8 +2308,8 @@ program
             let { apiKey, source } = await getApiKeyInfo(provider, options.apiKey);
             debugLog("token.resolved", { provider, source, token: maskSecret(apiKey) });
 
-            // Interactive first-run setup (TTY only)
-            if (!apiKey && process.stdin.isTTY && process.stdout.isTTY) {
+            // Interactive first-run setup (TTY only, not in shell mode - nested readline conflicts)
+            if (!apiKey && process.stdin.isTTY && process.stdout.isTTY && !isInShellMode()) {
                 debugLog("token.missing.firstRunPrompt.start");
                 const firstRun = await promptFirstRunConfig();
                 debugLog("token.missing.firstRunPrompt.done", { provider: firstRun.provider, useKeychain: firstRun.useKeychain, token: maskSecret(firstRun.apiKey) });
@@ -2248,11 +2324,11 @@ program
                 console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`No API key configured for ${formatProviderName(provider)}`));
                 console.error("");
                 console.error(theme.colors.dim("   Configure your API key using:"));
-                console.error(theme.colors.accent(`   megabuff config set --provider ${provider} <your-api-key>`));
+                console.error(theme.colors.accent(`   megabuff config token <your-api-key> --provider ${provider}`));
                 console.error("");
                 console.error(theme.colors.dim("   Or set an environment variable for this provider"));
                 console.error("");
-                process.exit(1);
+                exitOrThrow("No API key configured");
             }
 
             // Get the configured model (if any) for this provider
@@ -2269,7 +2345,7 @@ program
                 console.error("");
                 console.error(theme.colors.dim("   Valid styles: ") + theme.colors.info(validStyles.join(", ")));
                 console.error("");
-                process.exit(1);
+                exitOrThrow("Invalid style");
             }
 
             const customPrompt = options.systemPrompt;
@@ -2285,7 +2361,7 @@ program
                 console.error("");
                 console.error(theme.colors.dim("   Iterations must be between 1 and 5"));
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             if (iterations > 1) {
@@ -2325,8 +2401,8 @@ program
                         return;
                     }
 
-                    // Prompt user to confirm proceeding with the operation
-                    if (process.stdin.isTTY && process.stdout.isTTY) {
+                    // Prompt user to confirm proceeding with the operation (skip in shell mode)
+                    if (process.stdin.isTTY && process.stdout.isTTY && !isInShellMode()) {
                         const rl = readline.createInterface({
                             input: process.stdin,
                             output: process.stdout
@@ -2376,7 +2452,7 @@ program
                         console.error("");
                         console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`Provider '${provider}' is not supported for analysis`));
                         console.error("");
-                        process.exit(1);
+                        exitOrThrow();
                     }
 
                     analyzeInputTokens = analysisResult.usage.inputTokens;
@@ -2445,7 +2521,7 @@ program
                         console.error("");
                         console.error(theme.colors.dim("   Supported providers: ") + theme.colors.info("openai, anthropic, google, xai, deepseek"));
                         console.error("");
-                        process.exit(1);
+                        exitOrThrow();
                     }
 
                     optimized = response.result;
@@ -2505,8 +2581,8 @@ program
                         console.log(theme.colors.dim("─".repeat(80)));
                         console.log("");
 
-                        // Prompt user to confirm proceeding with next iteration
-                        if (process.stdin.isTTY && process.stdout.isTTY) {
+                        // Prompt user to confirm proceeding with next iteration (skip in shell mode)
+                        if (process.stdin.isTTY && process.stdout.isTTY && !isInShellMode()) {
                             const rl = readline.createInterface({
                                 input: process.stdin,
                                 output: process.stdout
@@ -2587,7 +2663,7 @@ program
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -2617,7 +2693,7 @@ program
                 console.error(theme.colors.error("❌ Error: ") + theme.colors.warning("No prompt provided"));
                 console.error(theme.colors.dim("   Provide a prompt inline, via --file, or through stdin"));
                 console.error("");
-                process.exit(1);
+                exitOrThrow();
             }
 
             let provider = await getProvider(options.provider);
@@ -2627,8 +2703,8 @@ program
             let { apiKey, source } = await getApiKeyInfo(provider, options.apiKey);
             debugLog("token.resolved", { provider, source, token: maskSecret(apiKey) });
 
-            // Interactive first-run setup (TTY only)
-            if (!apiKey && process.stdin.isTTY && process.stdout.isTTY) {
+            // Interactive first-run setup (TTY only, not in shell mode - nested readline conflicts)
+            if (!apiKey && process.stdin.isTTY && process.stdout.isTTY && !isInShellMode()) {
                 debugLog("token.missing.firstRunPrompt.start");
                 const firstRun = await promptFirstRunConfig();
                 debugLog("token.missing.firstRunPrompt.done", { provider: firstRun.provider, useKeychain: firstRun.useKeychain, token: maskSecret(firstRun.apiKey) });
@@ -2643,11 +2719,11 @@ program
                 console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(`No API key configured for ${formatProviderName(provider)}`));
                 console.error("");
                 console.error(theme.colors.dim("   Configure your API key using:"));
-                console.error(theme.colors.accent(`   megabuff config set --provider ${provider} <your-api-key>`));
+                console.error(theme.colors.accent(`   megabuff config token <your-api-key> --provider ${provider}`));
                 console.error("");
                 console.error(theme.colors.dim("   Or set an environment variable for this provider"));
                 console.error("");
-                process.exit(1);
+                exitOrThrow("No API key configured");
             }
 
             // Get the configured model (if any) for this provider
@@ -2686,8 +2762,8 @@ program
                     return;
                 }
 
-                // Prompt user to confirm proceeding with the operation
-                if (process.stdin.isTTY && process.stdout.isTTY) {
+                // Prompt user to confirm proceeding with the operation (skip in shell mode)
+                if (process.stdin.isTTY && process.stdout.isTTY && !isInShellMode()) {
                     const rl = readline.createInterface({
                         input: process.stdin,
                         output: process.stdout
@@ -2804,7 +2880,7 @@ program
             console.error("");
             console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
             console.error("");
-            process.exit(1);
+            exitOrThrow();
         }
     });
 
@@ -2814,7 +2890,7 @@ program
     .aliases(['interactive', 'i'])
     .description('Start interactive shell mode (run commands without typing "megabuff" each time)')
     .action(async () => {
-        await startInteractiveShell();
+        await startInteractiveShell(program);
     });
 
 program.parse();
