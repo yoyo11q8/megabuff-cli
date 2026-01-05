@@ -653,7 +653,8 @@ async function runOptimizeWithOptions(
                 console.log(currentPrompt);
                 console.log(theme.colors.dim(`--- End iteration ${i + 1} ---\n`));
                 if (i < iterations - 1) {
-                    spinner.start(`Optimization pass ${i + 2}/${iterations}...`);
+                    spinner.update(`Optimization pass ${i + 2}/${iterations}...`);
+                    spinner.start();
                 }
             }
         }
@@ -663,9 +664,9 @@ async function runOptimizeWithOptions(
 
         // Output result
         await outputResult(promptText, currentPrompt, {
-            output: options.output ?? undefined,
-            interactive: options.interactive ?? undefined,
-            copy: options.copy ?? undefined
+            ...(options.output !== undefined && { output: options.output }),
+            ...(options.interactive !== undefined && { interactive: options.interactive }),
+            ...(options.copy !== undefined && { copy: options.copy })
         });
 
         // Show actual cost if requested
@@ -781,7 +782,7 @@ export async function guidedAnalyze(shellRl?: CallbackInterface): Promise<void> 
         await runAnalyzeWithOptions(promptText, {
             provider: selectedProvider,
             showCost,
-            output: outputFile || undefined,
+            ...(outputFile && { output: outputFile }),
             copy: true
         });
 
