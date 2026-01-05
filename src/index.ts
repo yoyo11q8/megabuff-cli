@@ -1859,6 +1859,12 @@ async function runComparisonMode(
         totalOutputTokens: number;
         actualCost: number;
         model: string;
+        iterationCosts?: Array<{
+            iteration: number;
+            inputTokens: number;
+            outputTokens: number;
+            cost: number;
+        }>;
     }> = [];
 
     const processProvider = async (provider: Provider) => {
@@ -1870,6 +1876,7 @@ async function runComparisonMode(
             let optimized = original;
             let totalInputTokens = 0;
             let totalOutputTokens = 0;
+            const iterationCosts: Array<{ iteration: number; inputTokens: number; outputTokens: number; cost: number }> = [];
 
             try {
                 const apiKey = providerKeys[provider];
@@ -1915,6 +1922,14 @@ async function runComparisonMode(
 
                     const actualModel = modelToUse || getDefaultModelForProvider(provider);
                     const iterationCost = calculateCost(response.usage.inputTokens, response.usage.outputTokens, actualModel);
+
+                    // Track cost per iteration
+                    iterationCosts.push({
+                        iteration: i + 1,
+                        inputTokens: response.usage.inputTokens,
+                        outputTokens: response.usage.outputTokens,
+                        cost: iterationCost
+                    });
 
                     // Stop spinner temporarily for iteration results
                     if (iterations > 1) {
@@ -1986,7 +2001,7 @@ async function runComparisonMode(
                 const actualCost = calculateCost(totalInputTokens, totalOutputTokens, actualModel);
 
                 spinner.stop(`✨ ${formatProviderName(provider)} complete in ${(duration / 1000).toFixed(1)}s`);
-                results.push({
+                const resultData: any = {
                     provider,
                     result: optimized,
                     duration,
@@ -1994,7 +2009,11 @@ async function runComparisonMode(
                     totalOutputTokens,
                     actualCost,
                     model: actualModel
-                });
+                };
+                if (iterations > 1) {
+                    resultData.iterationCosts = iterationCosts;
+                }
+                results.push(resultData);
             } catch (error) {
                 const duration = Date.now() - startTime;
                 const configuredModel = await getModel();
@@ -2104,6 +2123,31 @@ async function runComparisonMode(
                 console.log(theme.colors.dim(`     Estimate accuracy: `) + theme.colors.info(`${estimateAccuracy}%`));
             }
             console.log("");
+
+            // Show per-iteration cost breakdown if there are multiple iterations
+            if (iterations > 1) {
+                console.log(theme.colors.info("  📊 Per-Iteration Cost Breakdown"));
+                console.log(theme.colors.dim("  ────────────────────────────────────────────────────────────────────────────"));
+
+                for (const result of successfulResults) {
+                    if (!result.iterationCosts || result.iterationCosts.length === 0) continue;
+
+                    const providerEmoji = result.provider === "openai" ? "🤖" :
+                                        result.provider === "anthropic" ? "🧠" :
+                                        result.provider === "google" ? "✨" :
+                                        result.provider === "xai" ? "🚀" :
+                                        result.provider === "deepseek" ? "🔮" : "🔧";
+
+                    console.log(theme.colors.dim(`     ${providerEmoji} ${formatProviderName(result.provider)} (${result.model}):`));
+
+                    for (const iterCost of result.iterationCosts) {
+                        console.log(theme.colors.dim(`        Iteration ${iterCost.iteration}: `) +
+                                  theme.colors.secondary(`${formatTokens(iterCost.inputTokens)} in + ${formatTokens(iterCost.outputTokens)} out`) +
+                                  theme.colors.dim(` = `) + theme.colors.accent(formatCost(iterCost.cost)));
+                    }
+                    console.log("");
+                }
+            }
         }
 
         console.log(theme.colors.dim("  ════════════════════════════════════════════════════════════════════════════"));
