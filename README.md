@@ -21,6 +21,8 @@
 
 <img width="690" src="media/github-media-banner.png" alt="MegaBuff Banner" width="100%">
 
+[![Watch the demo](https://img.shields.io/badge/▶_Watch_Demo-YouTube-red?style=for-the-badge&logo=youtube)](https://youtu.be/JZ4on86IpgU)
+
 </div>
 
 ---
@@ -32,6 +34,12 @@ Get started in seconds:
 ```bash
 npm install -g megabuff
 megabuff optimize "Rewrite this prompt to be clearer"
+
+# Use interactive mode for multiple commands!
+megabuff shell
+
+# Set up your API key (choose your favorite provider)
+megabuff config token YOUR_API_KEY --provider openai
 ```
 
 **That's it!** 🎉 You're ready to supercharge your prompts.
