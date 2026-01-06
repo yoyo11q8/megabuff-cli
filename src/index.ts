@@ -10,7 +10,7 @@ import { xai } from "@ai-sdk/xai";
 import { generateText } from "ai";
 import * as clipboardy from "clipboardy";
 import chalk from "chalk";
-import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, setProvider, setModel, getModel, normalizeProvider, getProviderForModel, MODEL_PROVIDER_MAP, PROVIDERS, type Provider, getThemeName, setThemeName } from "./config.js";
+import { getApiKeyInfo, setApiKey, removeApiKey, hasApiKey, getConfig, getProvider, setProvider, setModel, getModel, normalizeProvider, getProviderForModel, MODEL_PROVIDER_MAP, PROVIDERS, type Provider, getThemeName, setThemeName, logError, getErrorLogPath } from "./config.js";
 import { getDefaultModel } from "./models.js";
 import { themes, getAllThemeNames, isValidTheme, type ThemeName } from "./themes.js";
 import { getCurrentTheme, clearThemeCache } from "./theme-utils.js";
@@ -57,11 +57,18 @@ function maskSecret(secret: string | undefined): string {
  * Exit or throw error based on shell mode.
  * In shell mode, throws an error so the shell can catch it and continue.
  * Outside shell mode, calls process.exit(1).
+ * All errors are logged to ~/.megabuff/errors.log
  */
-function exitOrThrow(message?: string): never {
+function exitOrThrow(message?: string, context?: string): never {
+    // Log the error to file
+    const errorMessage = message || "Command failed";
+    logError(errorMessage, context).catch(() => {
+        // Ignore logging errors
+    });
+
     if (isInShellMode()) {
         // In shell mode, throw error so the shell can catch it and continue
-        const err = new Error(message || "Command failed");
+        const err = new Error(errorMessage);
         // Mark it so the shell knows to suppress the error message (already printed)
         (err as any).alreadyPrinted = true;
         throw err;
@@ -3725,10 +3732,13 @@ program
 
             await outputResult(original, optimized, options);
         } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            await logError(error instanceof Error ? error : errorMessage, "optimize");
             console.error("");
-            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(errorMessage));
+            console.error(theme.colors.dim(`   Error logged to: ~/.megabuff/errors.log`));
             console.error("");
-            exitOrThrow();
+            exitOrThrow(errorMessage, "optimize");
         }
     });
 
@@ -3942,10 +3952,13 @@ program
                 }
             }
         } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            await logError(error instanceof Error ? error : errorMessage, "analyze");
             console.error("");
-            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(error instanceof Error ? error.message : String(error)));
+            console.error(theme.colors.error("❌ Error: ") + theme.colors.warning(errorMessage));
+            console.error(theme.colors.dim(`   Error logged to: ~/.megabuff/errors.log`));
             console.error("");
-            exitOrThrow();
+            exitOrThrow(errorMessage, "analyze");
         }
     });
 

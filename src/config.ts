@@ -338,3 +338,43 @@ export async function setThemeName(theme: ThemeName): Promise<void> {
     config.theme = theme;
     await writeConfig(config);
 }
+
+// ============================================================================
+// ERROR LOGGING
+// ============================================================================
+
+const ERROR_LOG_FILE = path.join(CONFIG_DIR, "errors.log");
+
+/**
+ * Log an error to the errors.log file
+ */
+export async function logError(error: Error | string, context?: string): Promise<void> {
+    try {
+        await ensureConfigDir();
+
+        const timestamp = new Date().toISOString();
+        const errorMessage = error instanceof Error ? error.message : error;
+        const errorStack = error instanceof Error ? error.stack : undefined;
+
+        let logEntry = `[${timestamp}]`;
+        if (context) {
+            logEntry += ` [${context}]`;
+        }
+        logEntry += ` ${errorMessage}`;
+        if (errorStack) {
+            logEntry += `\n${errorStack}`;
+        }
+        logEntry += "\n\n";
+
+        await fs.appendFile(ERROR_LOG_FILE, logEntry, "utf-8");
+    } catch {
+        // Silently fail if we can't write to the log file
+    }
+}
+
+/**
+ * Get the path to the error log file
+ */
+export function getErrorLogPath(): string {
+    return ERROR_LOG_FILE;
+}

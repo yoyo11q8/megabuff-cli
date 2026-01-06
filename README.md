@@ -98,9 +98,12 @@ megabuff config token YOUR_API_KEY --provider openai
 
 # 3. Start optimizing!
 megabuff optimize "Write a function to validate emails"
+
+# 4. Or use interactive mode for multiple commands!
+megabuff shell
 ```
 
-> 💡 **Pro Tip:** Try out different themes with `megabuff theme list`!
+> 💡 **Pro Tip:** Use `megabuff shell` for an interactive session with guided wizards!
 
 ---
 
@@ -337,26 +340,40 @@ megabuff config show
 ### 🤖 Available Models
 
 **OpenAI:**
+- `gpt-5.2` (default)
 - `gpt-4o`
-- `gpt-4o-mini` (default)
+- `gpt-4o-mini`
 - `gpt-4-turbo`
 - `gpt-4`
 - `gpt-3.5-turbo`
 
 **Anthropic:**
-- `claude-sonnet-4-5-20250929` (latest)
+- `claude-opus-4-5` (default)
 - `claude-sonnet-4-5`
-- `claude-sonnet-4`
+- `claude-sonnet-4-0`
+- `claude-sonnet-4-5-20250929`
 - `claude-3-5-sonnet-20241022`
 - `claude-3-opus-20240229`
 - `claude-3-sonnet-20240229`
 - `claude-3-haiku-20240307`
 
 **Google Gemini:**
-- `gemini-2.0-flash-exp` (experimental)
-- `gemini-1.5-pro`
-- `gemini-1.5-flash` (default for Google)
-- `gemini-1.0-pro`
+- `gemini-2.5-flash` (default)
+- `gemini-2.5-pro`
+- `gemini-2.5-flash-lite`
+- `gemini-2.0-flash`
+- `gemini-2.0-flash-lite`
+- `gemini-3-flash-preview`
+- `gemini-3-pro-preview`
+- `gemini-flash-latest`
+
+**xAI (Grok):**
+- `grok-beta` (default)
+- `grok-vision-beta`
+
+**DeepSeek:**
+- `deepseek-chat` (default)
+- `deepseek-reasoner`
 
 ---
 
@@ -450,6 +467,7 @@ megabuff> exit
 
 **Features:**
 - ⚡ **Faster workflow** - Skip typing `megabuff` for every command
+- 🧙 **Guided wizards** - Type `optimize` or `analyze` without arguments to start a step-by-step wizard
 - 📜 **Command history** - Use arrow keys (↑/↓) to recall previous commands
 - 🔄 **Session persistence** - API keys and config loaded once
 - 💡 **Built-in help** - Type `help` anytime
@@ -459,6 +477,8 @@ megabuff> exit
 **Pro Tips:**
 - All regular commands work: `optimize`, `analyze`, `config`, `theme`
 - All flags work: `--provider`, `--style`, `--iterations`, `--show-cost`, etc.
+- Guided wizards only show providers with configured API tokens
+- Compare mode in wizards only shows providers you've set up
 - Press Ctrl+C twice to exit immediately
 - Perfect for batch operations and experimentation
 
