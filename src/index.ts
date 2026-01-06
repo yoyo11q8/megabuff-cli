@@ -3018,8 +3018,8 @@ async function runComparisonMode(
 
     // Run optimization for each provider
     // Use sequential execution if we need interactive prompts for iterations
-    // Also use sequential if shellRl is available (interactive shell mode) to avoid readline conflicts
-    const needsSequentialExecution = (options.showCost || shellRl) && iterations > 1 && process.stdin.isTTY && process.stdout.isTTY;
+    // Always run sequentially with prompts when there are multiple iterations in TTY mode
+    const needsSequentialExecution = iterations > 1 && process.stdin.isTTY && process.stdout.isTTY;
 
     const results: Array<{
         provider: Provider;
@@ -3066,8 +3066,8 @@ async function runComparisonMode(
 
                 // Run iterations for this provider
                 for (let i = 0; i < iterations; i++) {
-                    // Prompt before FIRST iteration if in shell mode with multiple iterations
-                    if (i === 0 && iterations > 1 && shellRl) {
+                    // Prompt before FIRST iteration with multiple iterations (both CLI and shell mode)
+                    if (i === 0 && iterations > 1 && process.stdin.isTTY && process.stdout.isTTY) {
                         spinner.stop();
 
                         // Show cost estimate for first iteration
@@ -3086,18 +3086,28 @@ async function runComparisonMode(
                             console.log("");
                         }
 
-                        if (process.stdin.isTTY && process.stdout.isTTY) {
-                            const answer = await shellRl.question(theme.colors.warning(`${formatProviderName(provider)}: Start iteration 1/${iterations}? (Y/n): `));
-
-                            // Default to 'yes' if user just presses Enter (since they explicitly requested multiple iterations)
-                            if (answer.trim() !== '' && answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
-                                console.log("");
-                                console.log(theme.colors.dim(`${formatProviderName(provider)}: Skipped.`));
-                                console.log("");
-                                break;
-                            }
-                            console.log("");
+                        let answer: string;
+                        if (shellRl) {
+                            // Use the shell's readline interface
+                            answer = await shellRl.question(theme.colors.warning(`${formatProviderName(provider)}: Start iteration 1/${iterations}? (Y/n): `));
+                        } else {
+                            // Create a new readline for CLI mode
+                            const rl = readline.createInterface({
+                                input: process.stdin,
+                                output: process.stdout
+                            });
+                            answer = await rl.question(theme.colors.warning(`${formatProviderName(provider)}: Start iteration 1/${iterations}? (Y/n): `));
+                            rl.close();
                         }
+
+                        // Default to 'yes' if user just presses Enter (since they explicitly requested multiple iterations)
+                        if (answer.trim() !== '' && answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+                            console.log("");
+                            console.log(theme.colors.dim(`${formatProviderName(provider)}: Skipped.`));
+                            console.log("");
+                            break;
+                        }
+                        console.log("");
 
                         spinner.start();
                     }
@@ -3181,32 +3191,30 @@ async function runComparisonMode(
                     }
 
                     // Prompt user to confirm proceeding with next iteration (if not the last iteration)
-                    // Always prompt if shellRl is available (interactive mode) or if showCost is enabled
-                    if (iterations > 1 && i < iterations - 1 && (options.showCost || shellRl)) {
-                        if (process.stdin.isTTY && process.stdout.isTTY) {
-                            let answer: string;
-                            if (shellRl) {
-                                // Use the shell's readline interface (WizardReadline has async question)
-                                answer = await shellRl.question(theme.colors.warning(`${formatProviderName(provider)}: Continue with iteration ${i + 2}/${iterations}? (Y/n): `));
-                            } else {
-                                // Create a new readline for CLI mode
-                                const rl = readline.createInterface({
-                                    input: process.stdin,
-                                    output: process.stdout
-                                });
-                                answer = await rl.question(theme.colors.warning(`${formatProviderName(provider)}: Continue with iteration ${i + 2}/${iterations}? (Y/n): `));
-                                rl.close();
-                            }
-
-                            // Default to 'yes' if user just presses Enter (since they explicitly requested multiple iterations)
-                            if (answer.trim() !== '' && answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
-                                console.log("");
-                                console.log(theme.colors.dim(`${formatProviderName(provider)}: Stopped after ${i + 1} iteration(s).`));
-                                console.log("");
-                                break;
-                            }
-                            console.log("");
+                    // Always prompt in TTY mode when there are multiple iterations
+                    if (iterations > 1 && i < iterations - 1 && process.stdin.isTTY && process.stdout.isTTY) {
+                        let answer: string;
+                        if (shellRl) {
+                            // Use the shell's readline interface (WizardReadline has async question)
+                            answer = await shellRl.question(theme.colors.warning(`${formatProviderName(provider)}: Continue with iteration ${i + 2}/${iterations}? (Y/n): `));
+                        } else {
+                            // Create a new readline for CLI mode
+                            const rl = readline.createInterface({
+                                input: process.stdin,
+                                output: process.stdout
+                            });
+                            answer = await rl.question(theme.colors.warning(`${formatProviderName(provider)}: Continue with iteration ${i + 2}/${iterations}? (Y/n): `));
+                            rl.close();
                         }
+
+                        // Default to 'yes' if user just presses Enter (since they explicitly requested multiple iterations)
+                        if (answer.trim() !== '' && answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+                            console.log("");
+                            console.log(theme.colors.dim(`${formatProviderName(provider)}: Stopped after ${i + 1} iteration(s).`));
+                            console.log("");
+                            break;
+                        }
+                        console.log("");
                     }
 
                     // Restart spinner for next iteration
