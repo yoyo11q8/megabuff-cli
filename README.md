@@ -57,6 +57,7 @@ megabuff optimize "Rewrite this prompt to be clearer"
 - 🔒 **Secure Storage** - Keychain support for API keys
 - 🎯 **Smart Model Selection** - Auto-detects provider from model name
 - 📊 **Stats Tracking** - See word count changes and improvements
+- 📝 **Error Logging** - All errors saved to `~/.megabuff/errors.log` for easy debugging
 - 🌈 **Beautiful Output** - Themed, formatted, fun to use!
 
 ---
@@ -470,6 +471,7 @@ megabuff> exit
 - 🧙 **Guided wizards** - Type `optimize` or `analyze` without arguments to start a step-by-step wizard
 - 📜 **Command history** - Use arrow keys (↑/↓) to recall previous commands
 - 🔄 **Session persistence** - API keys and config loaded once
+- 📝 **Error logging** - All errors saved to `~/.megabuff/errors.log` for debugging
 - 💡 **Built-in help** - Type `help` anytime
 - 🧹 **Clear screen** - Type `clear` to refresh
 - 🚪 **Easy exit** - Type `exit`, `quit`, or `q` to leave

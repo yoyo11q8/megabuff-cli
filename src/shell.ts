@@ -1,6 +1,7 @@
 import readline from 'readline';
 import type { Command } from 'commander';
 import { getTheme } from './themes.js';
+import { logError } from './config.js';
 
 const theme = getTheme();
 
@@ -136,8 +137,10 @@ export async function startInteractiveShell(prog: Command, wizards: GuidedWizard
                         await guidedAnalyze(rl);
                     }
                 } catch (error: any) {
+                    await logError(error instanceof Error ? error : error.message, `shell:${commandName}`);
                     if (!error.alreadyPrinted) {
                         console.error(theme.colors.error(`\n❌ Error: ${error.message}\n`));
+                        console.error(theme.colors.dim(`   Error logged to: ~/.megabuff/errors.log\n`));
                     }
                 }
                 console.log("");
@@ -160,8 +163,10 @@ export async function startInteractiveShell(prog: Command, wizards: GuidedWizard
                 try {
                     await guidedTheme(rl);
                 } catch (error: any) {
+                    await logError(error instanceof Error ? error : error.message, 'shell:theme');
                     if (!error.alreadyPrinted) {
                         console.error(theme.colors.error(`\n❌ Error: ${error.message}\n`));
+                        console.error(theme.colors.dim(`   Error logged to: ~/.megabuff/errors.log\n`));
                     }
                 }
                 console.log("");
@@ -174,8 +179,10 @@ export async function startInteractiveShell(prog: Command, wizards: GuidedWizard
                 try {
                     await guidedConfig(rl);
                 } catch (error: any) {
+                    await logError(error instanceof Error ? error : error.message, 'shell:config');
                     if (!error.alreadyPrinted) {
                         console.error(theme.colors.error(`\n❌ Error: ${error.message}\n`));
+                        console.error(theme.colors.dim(`   Error logged to: ~/.megabuff/errors.log\n`));
                     }
                 }
                 console.log("");
@@ -199,12 +206,15 @@ export async function startInteractiveShell(prog: Command, wizards: GuidedWizard
             console.log(""); // Empty line for readability
         } catch (error: any) {
             // Handle Commander errors gracefully without crashing the shell
+            const commandName = parseShellInput(input)[0];
+
             if (error.code && error.code.startsWith('commander.')) {
                 // Commander-specific errors (missing arguments, unknown options, etc.)
+                await logError(error instanceof Error ? error : error.message, `shell:${commandName || 'unknown'}`);
                 console.error(theme.colors.error(`\n❌ ${error.message}\n`));
+                console.error(theme.colors.dim(`   Error logged to: ~/.megabuff/errors.log\n`));
 
                 // Show command-specific help for common commands when arguments are missing
-                const commandName = parseShellInput(input)[0];
                 if (error.code === 'commander.missingArgument' && commandName) {
                     showCommandHelp(commandName);
                 }
@@ -215,7 +225,9 @@ export async function startInteractiveShell(prog: Command, wizards: GuidedWizard
                 // Error message was already printed by the command, just continue
                 console.log("");
             } else if (error.message && !error.message.includes('process.exit')) {
+                await logError(error instanceof Error ? error : error.message, `shell:${commandName || 'unknown'}`);
                 console.error(theme.colors.error(`\n❌ Error: ${error.message}\n`));
+                console.error(theme.colors.dim(`   Error logged to: ~/.megabuff/errors.log\n`));
             }
         }
 
