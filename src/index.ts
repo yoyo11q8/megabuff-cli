@@ -456,7 +456,14 @@ export async function guidedOptimize(shellRl?: CallbackInterface): Promise<void>
 
             // Step 8: Output file (optional)
             wizardStep(8, totalSteps, "Output options");
-            outputFile = await wizardPrompt(rl, "Save to file? (path or Enter to skip)");
+            const defaultOutputFile = `./megabuff-output-${new Date().toISOString().slice(0, 10)}.txt`;
+            console.log(theme.colors.dim(`  Default: ${defaultOutputFile}`));
+            const outputInput = await wizardPrompt(rl, "Save to file? (path, 'yes' for default, or Enter to skip)");
+            if (outputInput.toLowerCase() === 'yes' || outputInput.toLowerCase() === 'y') {
+                outputFile = defaultOutputFile;
+            } else if (outputInput.trim()) {
+                outputFile = outputInput;
+            }
         }
 
         // Show summary
@@ -483,9 +490,6 @@ export async function guidedOptimize(shellRl?: CallbackInterface): Promise<void>
             }
         }
 
-        // Close readline before running the actual command
-        rl.close();
-
         // Build options object and run optimize
         const options: Record<string, any> = {
             provider: selectedProvider,
@@ -509,25 +513,24 @@ export async function guidedOptimize(shellRl?: CallbackInterface): Promise<void>
             options.providers = compareProviders.join(",");
         }
 
-        // Now trigger the actual optimize command by parsing programmatically
-        // We'll construct the command args and call parseAsync
-        const args = ["node", "megabuff", "optimize", promptText];
+        // Determine if we need to keep readline open for iteration prompts
+        // In interactive shell mode, always prompt for iterations in compare mode
+        const needsIterationPrompts = useCompare && compareProviders.length >= 2 && iterations > 1;
 
-        if (options.provider) args.push("--provider", options.provider);
-        if (options.style) args.push("--style", options.style);
-        if (options.iterations) args.push("--iterations", options.iterations);
-        if (options.showCost) args.push("--show-cost");
-        if (options.output) args.push("--output", options.output);
-        if (options.compare) {
-            args.push("--compare");
-            if (options.providers) args.push("--providers", options.providers);
+        // Close readline before running the actual command (unless we need it for iteration prompts)
+        if (!needsIterationPrompts) {
+            rl.close();
         }
 
         console.log(theme.colors.dim("\n🚀 Running optimization...\n"));
 
-        // We need to run the actual optimization logic directly
-        // rather than re-parsing to avoid infinite loops
-        await runOptimizeWithOptions(promptText, options);
+        // Pass the readline if we need iteration prompts in shell mode
+        await runOptimizeWithOptions(promptText, options, needsIterationPrompts ? rl : undefined);
+
+        // Close readline after if we kept it open
+        if (needsIterationPrompts) {
+            rl.close();
+        }
 
     } catch (error) {
         rl.close();
@@ -556,7 +559,8 @@ async function runOptimizeWithOptions(
         estimateOnly?: boolean;
         systemPrompt?: string;
         models?: string;
-    }
+    },
+    shellRl?: WizardReadline
 ): Promise<void> {
     const provider = await getProvider(options.provider);
     const { apiKey } = await getApiKeyInfo(provider, options.apiKey);
@@ -584,7 +588,8 @@ async function runOptimizeWithOptions(
                 models: options.models,
                 verbose: options.verbose,
                 showCost: options.showCost
-            }
+            },
+            shellRl
         );
         return;
     }
@@ -762,7 +767,15 @@ export async function guidedAnalyze(shellRl?: CallbackInterface): Promise<void> 
 
         // Step 4: Output file (optional)
         wizardStep(4, totalSteps, "Output options");
-        const outputFile = await wizardPrompt(rl, "Save analysis to file? (path or Enter to skip)");
+        const defaultOutputFile = `./megabuff-analysis-${new Date().toISOString().slice(0, 10)}.txt`;
+        console.log(theme.colors.dim(`  Default: ${defaultOutputFile}`));
+        const outputInput = await wizardPrompt(rl, "Save analysis to file? (path, 'yes' for default, or Enter to skip)");
+        let outputFile = "";
+        if (outputInput.toLowerCase() === 'yes' || outputInput.toLowerCase() === 'y') {
+            outputFile = defaultOutputFile;
+        } else if (outputInput.trim()) {
+            outputFile = outputInput;
+        }
 
         // Step 5: Confirmation
         wizardStep(5, totalSteps, "Confirm");
@@ -2827,7 +2840,8 @@ async function runComparisonMode(
     style: OptimizationStyle,
     customPrompt: string | undefined,
     iterations: number,
-    options: any
+    options: any,
+    shellRl?: WizardReadline
 ): Promise<void> {
     console.log("");
     console.log(theme.colors.primary("🔍 Comparison Mode") + theme.colors.dim(" - Testing multiple providers..."));
@@ -3004,7 +3018,8 @@ async function runComparisonMode(
 
     // Run optimization for each provider
     // Use sequential execution if we need interactive prompts for iterations
-    const needsSequentialExecution = options.showCost && iterations > 1 && process.stdin.isTTY && process.stdout.isTTY;
+    // Also use sequential if shellRl is available (interactive shell mode) to avoid readline conflicts
+    const needsSequentialExecution = (options.showCost || shellRl) && iterations > 1 && process.stdin.isTTY && process.stdout.isTTY;
 
     const results: Array<{
         provider: Provider;
@@ -3051,6 +3066,42 @@ async function runComparisonMode(
 
                 // Run iterations for this provider
                 for (let i = 0; i < iterations; i++) {
+                    // Prompt before FIRST iteration if in shell mode with multiple iterations
+                    if (i === 0 && iterations > 1 && shellRl) {
+                        spinner.stop();
+
+                        // Show cost estimate for first iteration
+                        if (options.showCost) {
+                            const actualModel = modelToUse || getDefaultModelForProvider(provider);
+                            const firstIterationEstimate = estimateOptimizationCost(optimized, actualModel, 1);
+
+                            console.log("");
+                            console.log(theme.colors.primary(`💰 ${formatProviderName(provider)} - Iteration 1/${iterations} Cost Estimate`));
+                            console.log(theme.colors.dim("─".repeat(80)));
+                            console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(actualModel));
+                            console.log(theme.colors.info(`   Estimated input tokens: `) + theme.colors.secondary(formatTokens(firstIterationEstimate.inputTokens)));
+                            console.log(theme.colors.info(`   Estimated output tokens: `) + theme.colors.secondary(formatTokens(firstIterationEstimate.outputTokens)));
+                            console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(firstIterationEstimate.estimatedCost)));
+                            console.log(theme.colors.dim("─".repeat(80)));
+                            console.log("");
+                        }
+
+                        if (process.stdin.isTTY && process.stdout.isTTY) {
+                            const answer = await shellRl.question(theme.colors.warning(`${formatProviderName(provider)}: Start iteration 1/${iterations}? (Y/n): `));
+
+                            // Default to 'yes' if user just presses Enter (since they explicitly requested multiple iterations)
+                            if (answer.trim() !== '' && answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+                                console.log("");
+                                console.log(theme.colors.dim(`${formatProviderName(provider)}: Skipped.`));
+                                console.log("");
+                                break;
+                            }
+                            console.log("");
+                        }
+
+                        spinner.start();
+                    }
+
                     // Update spinner to show current iteration
                     if (iterations > 1) {
                         spinner.update(`${providerEmoji} ${formatProviderName(provider)} - iteration ${i + 1}/${iterations}...`);
@@ -3092,8 +3143,8 @@ async function runComparisonMode(
                         spinner.stop();
                     }
 
-                    // Show iteration output if verbose mode is enabled
-                    if (options.verbose && iterations > 1) {
+                    // Show iteration output if verbose mode is enabled OR if --show-cost is used (so user can see what they're paying for)
+                    if ((options.verbose || options.showCost) && iterations > 1) {
                         console.log("");
                         console.log(theme.colors.primary(`📝 ${formatProviderName(provider)} - Iteration ${i + 1}/${iterations} Output:`));
                         console.log(theme.colors.dim("─".repeat(80)));
@@ -3114,7 +3165,7 @@ async function runComparisonMode(
                         console.log("");
                     }
 
-                    // Show cost estimate for NEXT iteration and prompt for confirmation (if not the last iteration)
+                    // Show cost estimate for NEXT iteration (if --show-cost enabled)
                     if (options.showCost && iterations > 1 && i < iterations - 1) {
                         const nextIterationEstimate = estimateOptimizationCost(optimized, actualModel, 1);
 
@@ -3122,21 +3173,33 @@ async function runComparisonMode(
                         console.log(theme.colors.primary(`💰 ${formatProviderName(provider)} - Iteration ${i + 2}/${iterations} Cost Estimate`));
                         console.log(theme.colors.dim("─".repeat(80)));
                         console.log(theme.colors.info(`   Model: `) + theme.colors.secondary(actualModel));
+                        console.log(theme.colors.info(`   Estimated input tokens: `) + theme.colors.secondary(formatTokens(nextIterationEstimate.inputTokens)));
+                        console.log(theme.colors.info(`   Estimated output tokens: `) + theme.colors.secondary(formatTokens(nextIterationEstimate.outputTokens)));
                         console.log(theme.colors.info(`   Estimated cost: `) + theme.colors.accent(formatCost(nextIterationEstimate.estimatedCost)));
                         console.log(theme.colors.dim("─".repeat(80)));
                         console.log("");
+                    }
 
-                        // Prompt user to confirm proceeding with next iteration (skip in shell mode)
-                        if (process.stdin.isTTY && process.stdout.isTTY && !isInShellMode()) {
-                            const rl = readline.createInterface({
-                                input: process.stdin,
-                                output: process.stdout
-                            });
+                    // Prompt user to confirm proceeding with next iteration (if not the last iteration)
+                    // Always prompt if shellRl is available (interactive mode) or if showCost is enabled
+                    if (iterations > 1 && i < iterations - 1 && (options.showCost || shellRl)) {
+                        if (process.stdin.isTTY && process.stdout.isTTY) {
+                            let answer: string;
+                            if (shellRl) {
+                                // Use the shell's readline interface (WizardReadline has async question)
+                                answer = await shellRl.question(theme.colors.warning(`${formatProviderName(provider)}: Continue with iteration ${i + 2}/${iterations}? (Y/n): `));
+                            } else {
+                                // Create a new readline for CLI mode
+                                const rl = readline.createInterface({
+                                    input: process.stdin,
+                                    output: process.stdout
+                                });
+                                answer = await rl.question(theme.colors.warning(`${formatProviderName(provider)}: Continue with iteration ${i + 2}/${iterations}? (Y/n): `));
+                                rl.close();
+                            }
 
-                            const answer = await rl.question(theme.colors.warning(`${formatProviderName(provider)}: Continue with iteration ${i + 2}/${iterations}? (y/n): `));
-                            rl.close();
-
-                            if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
+                            // Default to 'yes' if user just presses Enter (since they explicitly requested multiple iterations)
+                            if (answer.trim() !== '' && answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
                                 console.log("");
                                 console.log(theme.colors.dim(`${formatProviderName(provider)}: Stopped after ${i + 1} iteration(s).`));
                                 console.log("");
@@ -3157,6 +3220,12 @@ async function runComparisonMode(
                 const actualCost = calculateCost(totalInputTokens, totalOutputTokens, actualModel);
 
                 spinner.stop(`✨ ${formatProviderName(provider)} complete in ${(duration / 1000).toFixed(1)}s`);
+
+                // Show completion message for multiple iterations
+                if (iterations > 1) {
+                    console.log(theme.colors.success(`🎉 ${formatProviderName(provider)}: All ${iterations} iterations complete!`));
+                    console.log("");
+                }
                 const resultData: any = {
                     provider,
                     result: optimized,
@@ -3624,8 +3693,8 @@ program
                         console.log("");
                     }
 
-                    // Show iteration output if verbose mode is enabled
-                    if (options.verbose && iterations > 1) {
+                    // Show iteration output if verbose mode is enabled OR if --show-cost is used (so user can see what they're paying for)
+                    if ((options.verbose || options.showCost) && iterations > 1) {
                         console.log("");
                         console.log(theme.colors.primary(`📝 Iteration ${i}/${iterations} Output:`));
                         console.log(theme.colors.dim("─".repeat(80)));
