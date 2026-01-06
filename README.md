@@ -10,7 +10,12 @@
  **[Star us on GitHub](https://github.com/thesupermegabuff/megabuff-cli)** 
 | **[Request a Feature](https://github.com/thesupermegabuff/megabuff-cli/issues)**
 
-🔑 BYOK (Bring Your Own Key) • 🎨 16 Beautiful Themes • ⚡ Lightning Fast
+[![Watch the demo](https://img.shields.io/badge/▶_Watch_Demo-YouTube-red?style=for-the-badge&logo=youtube)](https://youtu.be/JZ4on86IpgU)
+
+<img width="690" src="media/github-media-banner.png" alt="MegaBuff Banner" width="100%">
+
+<br/>
+<br/>
 
 [![npm version](https://img.shields.io/npm/v/megabuff.svg?style=flat-square)](https://www.npmjs.com/package/megabuff)
 [![npm downloads](https://img.shields.io/npm/dm/megabuff.svg?style=flat-square)](https://www.npmjs.com/package/megabuff)
@@ -19,11 +24,7 @@
 [![GitHub issues](https://img.shields.io/github/issues/thesupermegabuff/megabuff-cli.svg?style=flat-square)](https://github.com/thesupermegabuff/megabuff-cli/issues)
 [![Node.js Version](https://img.shields.io/node/v/megabuff.svg?style=flat-square)](https://nodejs.org)
 
-<img width="690" src="media/github-media-banner.png" alt="MegaBuff Banner" width="100%">
-
-[![Watch the demo](https://img.youtube.com/vi/JZ4on86IpgU/maxresdefault.jpg)](https://youtu.be/JZ4on86IpgU)
-
-*Click the image above to watch the demo on YouTube*
+🔑 BYOK (Bring Your Own Key) • 🎨 16 Beautiful Themes • ⚡ Lightning Fast
 
 </div>
 
