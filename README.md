@@ -21,7 +21,9 @@
 
 <img width="690" src="media/github-media-banner.png" alt="MegaBuff Banner" width="100%">
 
-[![Watch the demo](https://img.shields.io/badge/▶_Watch_Demo-YouTube-red?style=for-the-badge&logo=youtube)](https://youtu.be/JZ4on86IpgU)
+[![Watch the demo](https://img.youtube.com/vi/JZ4on86IpgU/maxresdefault.jpg)](https://youtu.be/JZ4on86IpgU)
+
+*Click the image above to watch the demo on YouTube*
 
 </div>
 
